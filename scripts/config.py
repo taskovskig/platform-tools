@@ -1,5 +1,5 @@
 """Validate project configuration and emit safely quoted Bash bindings."""
-import json, re, shlex, sys
+import json, os, re, shlex, sys
 from pathlib import Path
 root = Path(sys.argv[1]).resolve()
 c = json.loads((root / 'platform.json').read_text())
@@ -14,6 +14,26 @@ def path(v):
     assert not p.is_absolute() and '..' not in p.parts and (root/p).exists(), f'Invalid project path: {v}'
     return v
 def bind(k, v): print(f'{k}={shlex.quote(str(v))}')
+environment = os.environ.get('PLATFORM_ENVIRONMENT', 'local')
+assert environment in ('local', 'development'), 'Only local and development are supported; production deployment is disabled'
+bind('PLATFORM_ENVIRONMENT', environment)
+bind('IMAGE_PLATFORM', 'linux/amd64')
+if environment == 'development':
+    target = c['environments']['development']
+    assert target['namespace'] == 'app-dev', 'Development must use app-dev'
+    c['cluster'] = name(target['cluster'])
+    c['namespace'] = target['namespace']
+    assert target['context'] == 'kind-' + c['cluster'], 'Context must match the configured kind cluster'
+    prefix = target['imagePrefix']
+    assert re.fullmatch(r'ghcr\.io/[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._/-]*', prefix) and not prefix.endswith('/'), 'Invalid GHCR image prefix'
+    for app, meta in apps.items():
+        meta['image'] = prefix + '/' + name(app)
+    # Shared infrastructure is pre-provisioned; project manifests cannot target another namespace.
+    c.pop('namespaceManifest', None)
+    c['database'].pop('serviceAccountManifest', None)
+    bind('KUBE_CONTEXT', target['context'])
+else:
+    bind('KUBE_CONTEXT', 'kind-' + name(c['cluster']))
 for a, meta in apps.items():
     name(a)
     for field in ('dockerfile', 'values'): path(meta[field])

@@ -56,6 +56,52 @@ path fields and their old files, and reduce database values to application-speci
 overrides. Verify deployment, persistence and release isolation before committing
 that consumer migration. No consumer migration is needed to publish this release.
 
+## Existing development cluster (v0.3.0)
+
+The reusable `.github/workflows/development.yaml` runs the same acceptance suite
+on GitHub-hosted Linux AMD64 runners, using environment `development` and its
+`KUBECONFIG` secret. It accepts same-repository PRs only, serializes deployments,
+publishes public GHCR images with `GITHUB_TOKEN`, verifies anonymous pulls, and
+uses immutable image digests. A caller must grant `packages: write`, keep a
+required aggregate check that rejects skipped/failed deployment, and permit PR
+merge refs in the environment's branch policy. Configure an environment reviewer
+before granting PR code deployment access.
+
+Consumers select the existing-cluster path with `PLATFORM_ENVIRONMENT=development`
+and a `KUBECONFIG` file path, then run `make development-up`. A schema-v1 consumer
+adds this configuration (local defaults remain unchanged):
+
+```json
+"environments": {
+  "development": {
+    "cluster": "testkube-samples",
+    "context": "kind-testkube-samples",
+    "namespace": "app-dev",
+    "imagePrefix": "ghcr.io/taskovskig/testkube-samples"
+  }
+}
+```
+
+This initial existing-cluster contract supports only `app-dev`, Linux amd64,
+public GHCR images, and a context matching `kind-<cluster>`. Production mode is
+rejected. An administrator applies `defaults/development-access.yaml` once and
+issues a namespace-scoped portable kubeconfig for `platform-deployer`. Deployment
+jobs never apply that RBAC manifest, create/delete namespaces, or create/delete
+clusters. `up` and `down` are rejected in development mode. The database remains
+an independent release and must contain development-only data; persistence and
+outage tests are intentionally disruptive within that namespace.
+
+Application outage hooks receive `KUBE_CONTEXT` alongside `KUBECONFIG_FILE` and
+`NAMESPACE`; use these explicit settings for every Kubernetes call. The database
+and application releases remain deployed after CI. Cancellation and failed
+upgrades can require manual namespace-scoped recovery. Namespace separation does
+not isolate shared-node resource failures. Production deployment is not included.
+
+GHCR packages start private: publish once, change both packages to public, then
+rerun if anonymous pulls failed. No cluster pull secret is required. Renew the
+Kubernetes credential before expiration. The application runbook owns the exact
+GitHub environment, branch protection, credential setup, and recovery commands.
+
 ## Everyday development
 
 Commit and push source changes normally; run `make test` for local validation.
@@ -66,7 +112,7 @@ between releases.
 
 ## Preparing a release
 
-Manifest generation is required only when preparing a new release. Finish all
+Manifest generation is required only when preparing a new release. It includes tracked and non-ignored source files; ignored local credentials are excluded, and tracked `.kube` files are rejected. Finish all
 source changes, update `VERSION`, then run `make release-manifest` and commit the
 generated manifest together with the release changes. Any further packaged-file
 changes require regenerating it before tagging.

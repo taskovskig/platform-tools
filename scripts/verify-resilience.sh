@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fault injection is restricted to the dedicated, disposable local cluster.
+# Fault injection targets only the configured local namespace or app-dev; never production.
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 psql_query() { k exec "$DB_STATEFULSET-0" -- sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "$1"' sh "$1"; }

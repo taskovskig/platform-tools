@@ -1,0 +1,44 @@
+name: Provision cluster namespaces
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: provision-kind-testkube-samples
+  cancel-in-progress: false
+jobs:
+  provision:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: platform-administration
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Validate platform tooling
+        run: make test
+      - name: Install pinned kubectl
+        run: |
+          mkdir -p "$RUNNER_TEMP/platform-kubectl"
+          cd "$RUNNER_TEMP/platform-kubectl"
+          curl -fsSLo kubectl https://dl.k8s.io/release/v1.37.0/bin/linux/amd64/kubectl
+          curl -fsSLo kubectl.sha256 https://dl.k8s.io/release/v1.37.0/bin/linux/amd64/kubectl.sha256
+          printf '%s  kubectl\n' "$(cat kubectl.sha256)" | sha256sum --check
+          chmod +x kubectl
+          echo "$PWD" >> "$GITHUB_PATH"
+      - name: Provision namespaces and deployment access
+        env:
+          KUBECONFIG_CONTENT: ${{ secrets.KUBECONFIG }}
+        run: |
+          test -n "$KUBECONFIG_CONTENT" || { echo 'Set the KUBECONFIG Actions secret in platform-tools (repository or platform-administration environment).' >&2; exit 1; }
+          umask 077
+          export KUBECONFIG="$RUNNER_TEMP/platform-admin-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          trap 'rm -f "$KUBECONFIG"' EXIT
+          printf '%s' "$KUBECONFIG_CONTENT" > "$KUBECONFIG"
+          bash scripts/provision-cluster.sh
+      - name: Remove temporary credential
+        if: always()
+        run: rm -f "$RUNNER_TEMP/platform-admin-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"

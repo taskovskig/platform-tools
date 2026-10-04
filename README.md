@@ -84,8 +84,9 @@ adds this configuration (local defaults remain unchanged):
 
 This initial existing-cluster contract supports only `app-dev`, Linux amd64,
 public GHCR images, and a context matching `kind-<cluster>`. Production mode is
-rejected. An administrator applies `defaults/development-access.yaml` once and
-issues a namespace-scoped portable kubeconfig for `platform-deployer`. Deployment
+rejected. The administrative provisioning workflow creates the namespaces and
+applies namespace-scoped deployment access for all three namespaces. An administrator then issues a
+namespace-scoped portable kubeconfig for `platform-deployer`. Deployment
 jobs never apply that RBAC manifest, create/delete namespaces, or create/delete
 clusters. `up` and `down` are rejected in development mode. The database remains
 an independent release and must contain development-only data; persistence and
@@ -101,6 +102,61 @@ GHCR packages start private: publish once, change both packages to public, then
 rerun if anonymous pulls failed. No cluster pull secret is required. Renew the
 Kubernetes credential before expiration. The application runbook owns the exact
 GitHub environment, branch protection, credential setup, and recovery commands.
+
+## Cluster provisioning on main
+
+`.github/workflows/provision-cluster.yaml` runs on every push to `main` in this
+platform repository, and can also be started manually from `main`. It runs the
+tooling tests, installs checksum-verified kubectl, and applies:
+
+- `defaults/namespaces.yaml`: `app-ci`, `app-dev`, and `app-prod`, with restricted
+  Pod Security admission pinned to v1.37.
+- `defaults/ci-access.yaml`, `defaults/development-access.yaml`, and
+  `defaults/production-access.yaml`: a separate `platform-deployer` service account,
+  Role, and RoleBinding in each corresponding namespace. Each binding names only
+  the service account from its own namespace; there are no ClusterRoleBindings.
+  The repeated `app-dev` namespace declaration matches the namespace defaults.
+
+Repeated runs use `kubectl apply`; they do not delete namespaces, prune resources,
+create/delete the kind cluster, or deploy applications. Production provisioning
+creates its namespace and deployment access, but does not install workloads or
+enable production deployment. Each identity has the same deployment permissions
+restricted to its own namespace. Existing workloads must comply with the restricted
+policy for future pod creations. Disposable application CI remains unchanged;
+creating `app-ci` does not move those tests onto the shared cluster.
+
+Before the first run, configure **this repository's** GitHub environment
+`platform-administration`:
+
+1. Allow deployment from `main` only. Protect `main` with review requirements;
+   optionally require an environment reviewer for administrative changes.
+2. Set the **Actions repository secret** `KUBECONFIG` under Settings → Secrets
+   and variables → Actions, or set an environment secret with that name in
+   `platform-administration`. The workflow reads `${{ secrets.KUBECONFIG }}`,
+   which supports either location; a same-named environment secret takes precedence.
+   Do not use a configuration variable. Store the full portable administrative
+   kubeconfig contents with context `kind-testkube-samples`, not a local path.
+   Its identity must be allowed to manage these namespaces and their scoped RBAC.
+   The namespace-limited application credential cannot perform provisioning.
+3. Ensure its API endpoint is reachable from GitHub-hosted runners and its
+   embedded credentials are valid. The workflow writes them to a temporary file
+   with restricted permissions and removes the file on completion/failure.
+
+The `platform-administration` job environment still supplies deployment rules
+when using a repository secret. A repository secret is also available to other
+eligible workflows in this repository; environment secrets provide narrower
+exposure. See [GitHub secret precedence](https://docs.github.com/en/actions/reference/security/secrets).
+
+The application repository's `development` environment keeps its own, less
+privileged `KUBECONFIG`. Do not replace it with the administrative credential.
+After provisioning passes, create/renew the scoped application kubeconfig as
+needed and rerun the failed application development job. Existing token creation
+and renewal remain administrative steps, not part of this provisioning workflow.
+
+No new platform tag or application pin update is needed to activate provisioning:
+it runs from `main`. Keep published v0.3.0 unchanged. Generate a fresh manifest
+only when preparing the next platform release. Commit and push these workflow,
+manifest-source, script, test, and documentation changes normally.
 
 ## Everyday development
 

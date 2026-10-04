@@ -11,7 +11,7 @@ class ConfigTests(unittest.TestCase):
           'checks':[{'service':'frontend','path':'/ready','body':'ok'}],
           'database':{'release':'storage','statefulset':'storage','secret':'credentials','pvc':'data-storage-0','values':'file','serviceAccountManifest':'file','client':'frontend','outageCheck':'file','developmentUser':'user','developmentPassword':"a'$(touch unwanted)"}}
     def run_config(self, environment="local"):
-        env = dict(os.environ, PLATFORM_ENVIRONMENT=environment)
+        env = dict(os.environ, PLATFORM_ENVIRONMENT=environment, DB_NAME='ci-db', DB_USER='ci-user', DB_PASSWORD='ci-pass')
         (self.root/'platform.json').write_text(json.dumps(self.config))
         return subprocess.run(['python3',str(SCRIPT),str(self.root)],capture_output=True,text=True,env=env)
     def test_non_sample_names_and_safe_shell_quoting(self):
@@ -67,4 +67,15 @@ class ConfigTests(unittest.TestCase):
         self.config['checks'][0]['service']='missing';self.assertNotEqual(self.run_config().returncode,0)
     def test_rejects_unknown_schema(self):
         self.config['schemaVersion']=2;self.assertNotEqual(self.run_config().returncode,0)
-if __name__=='__main__':unittest.main()
+
+
+    def test_shared_credentials_require_all_secrets(self):
+        self.config['environments'] = {'app-ci': {'cluster':'testkube-samples', 'namespace':'app-ci', 'context':'kind-testkube-samples', 'imagePrefix':'ghcr.io/example/sample'}}
+        self.run_config('app-ci')
+        for missing in ('DB_NAME','DB_USER','DB_PASSWORD'):
+            env=dict(os.environ, PLATFORM_ENVIRONMENT='app-ci', DB_NAME='ci-db', DB_USER='ci-user', DB_PASSWORD='sensitive-value')
+            env.pop(missing)
+            result=subprocess.run(['python3',str(SCRIPT),str(self.root)],env=env,capture_output=True,text=True)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('Set '+missing,result.stderr)
+            self.assertNotIn('sensitive-value',result.stderr)

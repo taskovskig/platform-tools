@@ -23,6 +23,8 @@ def render(directory, namespace, release, secret):
         'db.values.json': {
             'fullnameOverride': release,
             'settings': {'existingSecret': secret},
+            'env': [{'name': 'POSTGRES_DB', 'valueFrom': {'secretKeyRef': {'name': secret, 'key': 'POSTGRES_DB'}}},
+                    {'name': 'PGDATABASE', 'valueFrom': {'secretKeyRef': {'name': secret, 'key': 'POSTGRES_DB'}}}],
             'serviceAccount': {'name': release},
         },
     }

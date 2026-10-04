@@ -75,7 +75,7 @@ class DeliveryTests(unittest.TestCase):
         thread.start()
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
-        self.env = dict(os.environ, PROJECT_ROOT=str(self.root), PLATFORM_ENVIRONMENT='app-ci', GH_BUILD_NUMBER='42',
+        self.env = dict(os.environ, PROJECT_ROOT=str(self.root), PLATFORM_ENVIRONMENT='app-ci', GH_BUILD_NUMBER='42', DB_NAME='ci-db', DB_USER='ci-user', DB_PASSWORD='ci-pass',
                         KUBECONFIG=str(self.root / 'kubeconfig'), TRACE=str(self.root / 'trace'),
                         HTTP_PORT=str(self.server.server_port), PATH=str(self.root / 'bin')+os.pathsep+os.environ['PATH'])
 

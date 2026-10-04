@@ -52,10 +52,15 @@ bind('KIND_CONFIG', path(c['kindConfig']) if 'kindConfig' in c else Path(__file_
 bind('NAMESPACE_MANIFEST', path(c['namespaceManifest']) if 'namespaceManifest' in c else '')
 bind('APPS', ' '.join(apps))
 print('BUILD_CONTEXT=('+' '.join(shlex.quote(path(p)) for p in c['buildContext'])+')')
-for key, field in {'DB_RELEASE':'release','DB_VALUES':'values','DB_STATEFULSET':'statefulset','DB_PVC':'pvc','DB_SECRET':'secret','DB_USER':'developmentUser','DB_PASSWORD':'developmentPassword','DB_CLIENT':'client','DB_OUTAGE_CHECK':'outageCheck'}.items(): bind(key,db[field])
+for key, field in {'DB_RELEASE':'release','DB_VALUES':'values','DB_STATEFULSET':'statefulset','DB_PVC':'pvc','DB_SECRET':'secret','DB_CLIENT':'client','DB_OUTAGE_CHECK':'outageCheck'}.items(): bind(key,db[field])
 bind('DB_ACCOUNT', db.get('serviceAccountManifest', ''))
 for field in ('release','statefulset','pvc'): bind('LEGACY_'+field.upper(), name(c['legacy'][field]) if c.get('legacy',{}).get(field) else '')
 for field in ('dockerfile','image','values','port','localPort'):
     print(f'app_{field}() {{ case "$1" in')
     for a, meta in apps.items(): print(f'{shlex.quote(a)}) printf \'%s\\n\' {shlex.quote(str(meta[field]))} ;;')
     print('*) return 1 ;; esac; }')
+
+for key, field, default in [('DB_NAME', 'developmentName', 'api-db'), ('DB_USER', 'developmentUser', ''), ('DB_PASSWORD', 'developmentPassword', '')]:
+    value = db.get(field, default) if environment == 'local' else os.environ.get(key, '')
+    assert value, f'Set {key} in the selected GitHub environment'
+    bind(key, value)

@@ -35,8 +35,7 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "name",
-          "value"
+          "name"
         ],
         "properties": {
           "name": {
@@ -45,8 +44,47 @@
           },
           "value": {
             "type": "string"
+          },
+          "valueFrom": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "secretKeyRef"
+            ],
+            "properties": {
+              "secretKeyRef": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "key"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
           }
-        }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "value"
+            ]
+          },
+          {
+            "required": [
+              "valueFrom"
+            ]
+          }
+        ]
       }
     },
     "resources": {

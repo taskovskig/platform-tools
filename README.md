@@ -5,7 +5,7 @@
 The `platform-tools-cli` Python package is distributed directly from this repository's immutable release tags. No PyPI publication or application-owned bootstrap source is required. Python 3.10+, Git and pipx are prerequisites.
 
 ```sh
-pipx install 'git+https://github.com/taskovskig/platform-tools.git@v0.5.1'
+pipx install 'git+https://github.com/taskovskig/platform-tools.git@v0.6.0'
 pipx ensurepath
 platform-tools --version
 ```
@@ -21,13 +21,13 @@ For platform development, install this checkout with `pipx install --force .`, t
 Documentation rendering is an optional extra, also owned here:
 
 ```sh
-pipx install --force 'platform-tools-cli[docs] @ git+https://github.com/taskovskig/platform-tools.git@v0.5.1'
+pipx install --force 'platform-tools-cli[docs] @ git+https://github.com/taskovskig/platform-tools.git@v0.6.0'
 platform-render-design PLATFORM-DESIGN.md PLATFORM-DESIGN.pdf
 ```
 
 The existing case-study layout is retained. Input/output paths now come from arguments; installing the base CLI does not install ReportLab. The Markdown and generated PDF remain application-owned.
 
-Before publishing, align `VERSION`, `platform_tools.__version__`, and the CLI installation tag in `delivery.yaml`; run tests and generate the release manifest. Publish v0.5.1 before upgrading application workflow/lock pins. Package installation is validated by the platform checks workflow. Bootstrap tests now live in `tests/test_cli.py` in this repository.
+Before publishing, align `VERSION`, `platform_tools.__version__`, and the CLI installation tag in `delivery.yaml`; run tests and generate the release manifest. Publish v0.6.0 before upgrading application workflow/lock pins. Package installation is validated by the platform checks workflow. Bootstrap tests now live in `tests/test_cli.py` in this repository.
 
 
 Platform-team-owned tooling for local Kubernetes application environments. Consumers pin a Git tag and SHA-256 of `distribution.json`; that manifest pins every file in the package, including the shared Helm chart and reusable workflow. Do not move or overwrite published tags.
@@ -71,8 +71,6 @@ intentionally do not select an image version. A minimal project override is:
 ```yaml
 image:
   tag: 17-bookworm
-env:
-  - {name: POSTGRES_DB, value: api-db}
 ```
 
 Review database upgrades separately from tooling upgrades. Helm merges maps but
@@ -229,3 +227,11 @@ Generic chart checks use an isolated npm dependency directory under the consumer
 ## Validation
 
 Run `python3 -m unittest discover -s tests -p 'test_*.py'` for configuration contracts and `bash -n scripts/*.sh` for shell syntax. Run `make chart-test`, `make up`, `make helm-test`, `make resilience` and browser acceptance from a consumer checkout using the explicit local override before publishing. CLI download, cache, tamper, archive-safety, project discovery and dispatch tests run in this repository.
+
+## Environment-specific PostgreSQL credentials
+
+Delivery jobs pass `DB_NAME`, `DB_USER`, and `DB_PASSWORD` from the selected GitHub environment. They are mandatory outside local mode. Local mode uses the application database fields `developmentName` (default api-db), `developmentUser` and `developmentPassword`.
+
+The platform creates a Secret through JSON on stdin, supporting special characters without putting passwords in CLI arguments, files, Helm values or command output. Existing Secret values must match all three requested fields; mismatch or missing legacy database-name key requires an explicit migration/reset. PostgreSQL initialization settings cannot rotate credentials on an existing volume.
+
+Generated database values reference POSTGRES_DB in that Secret and set PGDATABASE for probes. Application values can reference the same Secret using env.valueFrom.secretKeyRef, supported by the shared chart schema. Set API DB_NAME/DB_USER/DB_PASSWORD to the matching POSTGRES_DB/POSTGRES_USER/POSTGRES_PASSWORD keys. app-prod remains disabled until an explicit production delivery design is added.

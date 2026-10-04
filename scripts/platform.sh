@@ -49,11 +49,12 @@ credentials() {
   fi
   # Reuse the existing Secret: PostgreSQL only uses initialization credentials once.
   if k get secret "$DB_SECRET" >/dev/null 2>&1; then
-    local username password
+    local username password database
     username=$(k get secret "$DB_SECRET" -o jsonpath='{.data.POSTGRES_USER}' | base64 --decode)
     password=$(k get secret "$DB_SECRET" -o jsonpath='{.data.POSTGRES_PASSWORD}' | base64 --decode)
-    if [ "$username" != "$DB_USER" ] || [ "$password" != "$DB_PASSWORD" ]; then
-      echo 'Existing database credentials do not match the unchanged application. See the migration runbook; credentials will not be overwritten.' >&2
+    database=$(k get secret "$DB_SECRET" -o jsonpath='{.data.POSTGRES_DB}' | base64 --decode)
+    if [ "$username" != "$DB_USER" ] || [ "$password" != "$DB_PASSWORD" ] || [ "$database" != "$DB_NAME" ]; then
+      echo 'Existing database Secret does not match the requested credentials/database. See the migration runbook; credentials will not be overwritten.' >&2
       exit 1
     fi
     return
@@ -62,8 +63,8 @@ credentials() {
     echo 'Database Secret missing but data exists. Restore its original credentials; see the runbook.' >&2
     exit 1
   fi
-  (umask 077; printf 'POSTGRES_USER=%s\nPOSTGRES_PASSWORD=%s\n' "$DB_USER" "$DB_PASSWORD" > "$STATE/database.env")
-  k create secret generic "$DB_SECRET" --from-env-file="$STATE/database.env" >/dev/null
+  export DB_USER DB_PASSWORD DB_NAME DB_SECRET NAMESPACE
+  python3 -c 'import json,os; print(json.dumps({"apiVersion":"v1","kind":"Secret","metadata":{"name":os.environ["DB_SECRET"],"namespace":os.environ["NAMESPACE"]},"type":"Opaque","stringData":{"POSTGRES_USER":os.environ["DB_USER"],"POSTGRES_PASSWORD":os.environ["DB_PASSWORD"],"POSTGRES_DB":os.environ["DB_NAME"]}}))' | k create -f - >/dev/null
 }
 legacy_guard() {
   if { [ -n "$LEGACY_RELEASE" ] && h status "$LEGACY_RELEASE" >/dev/null 2>&1; } || { [ -n "$LEGACY_STATEFULSET" ] && k get statefulset "$LEGACY_STATEFULSET" >/dev/null 2>&1; } || { [ -n "$LEGACY_PVC" ] && k get pvc "$LEGACY_PVC" >/dev/null 2>&1; }; then
@@ -80,7 +81,7 @@ db_up() {
   k apply -f "$DB_ACCOUNT"
   local chart
   chart=$(bash "$TOOLS_ROOT/scripts/db-chart.sh")
-  h upgrade --install "$DB_RELEASE" "$chart" -f "$TOOLS_ROOT/defaults/db.values.yaml" -f "$STATE/infrastructure/db.values.json" -f "$DB_VALUES" --wait --timeout 10m --history-max 10
+  h upgrade --install "$DB_RELEASE" "$chart" -f "$TOOLS_ROOT/defaults/db.values.yaml" -f "$DB_VALUES" -f "$STATE/infrastructure/db.values.json" --wait --timeout 10m --history-max 10
 }
 render() {
   : > "$STATE/rendered.yaml"

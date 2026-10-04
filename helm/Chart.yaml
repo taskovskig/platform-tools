@@ -2,6 +2,6 @@ apiVersion: v2
 name: application
 description: Shared stateless application deployment chart
 type: application
-version: 0.2.0
+version: 0.3.0
 appVersion: "1.0.0"
 kubeVersion: ">=1.30.0-0"

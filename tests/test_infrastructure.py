@@ -19,5 +19,6 @@ class InfrastructureTests(unittest.TestCase):
             self.assertEqual(namespace['metadata']['labels']['pod-security.kubernetes.io/enforce'], 'restricted')
             self.assertEqual(account['metadata'], {'name': 'storage', 'namespace': 'example'})
             self.assertFalse(account['automountServiceAccountToken'])
+            self.assertEqual(values.pop('env'), [{'name': name, 'valueFrom': {'secretKeyRef': {'name': 'credentials', 'key': 'POSTGRES_DB'}}} for name in ['POSTGRES_DB', 'PGDATABASE']])
             self.assertEqual(values, {'fullnameOverride': 'storage', 'settings': {'existingSecret': 'credentials'}, 'serviceAccount': {'name': 'storage'}})
             self.assertNotIn('image', values)  # Database image version belongs to the application.

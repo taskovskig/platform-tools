@@ -5,7 +5,7 @@
 The `platform-tools-cli` Python package is distributed directly from this repository's immutable release tags. No PyPI publication or application-owned bootstrap source is required. Python 3.10+, Git and pipx are prerequisites.
 
 ```sh
-pipx install 'git+https://github.com/taskovskig/platform-tools.git@v0.5.0'
+pipx install 'git+https://github.com/taskovskig/platform-tools.git@v0.5.1'
 pipx ensurepath
 platform-tools --version
 ```
@@ -21,13 +21,13 @@ For platform development, install this checkout with `pipx install --force .`, t
 Documentation rendering is an optional extra, also owned here:
 
 ```sh
-pipx install --force 'platform-tools-cli[docs] @ git+https://github.com/taskovskig/platform-tools.git@v0.5.0'
+pipx install --force 'platform-tools-cli[docs] @ git+https://github.com/taskovskig/platform-tools.git@v0.5.1'
 platform-render-design PLATFORM-DESIGN.md PLATFORM-DESIGN.pdf
 ```
 
 The existing case-study layout is retained. Input/output paths now come from arguments; installing the base CLI does not install ReportLab. The Markdown and generated PDF remain application-owned.
 
-Before publishing, align `VERSION`, `platform_tools.__version__`, and the CLI installation tag in `delivery.yaml`; run tests and generate the release manifest. Publish v0.5.0 before upgrading application workflow/lock pins. Package installation is validated by the platform checks workflow. Bootstrap tests now live in `tests/test_cli.py` in this repository.
+Before publishing, align `VERSION`, `platform_tools.__version__`, and the CLI installation tag in `delivery.yaml`; run tests and generate the release manifest. Publish v0.5.1 before upgrading application workflow/lock pins. Package installation is validated by the platform checks workflow. Bootstrap tests now live in `tests/test_cli.py` in this repository.
 
 
 Platform-team-owned tooling for local Kubernetes application environments. Consumers pin a Git tag and SHA-256 of `distribution.json`; that manifest pins every file in the package, including the shared Helm chart and reusable workflow. Do not move or overwrite published tags.
@@ -105,7 +105,9 @@ Feature CI calls `ci-reset` first: uninstall configured applications and databas
 delete the database PVC and Secret, while retaining namespace and deployment RBAC.
 `ci-up` builds `ci-$GH_BUILD_NUMBER` (GitHub workflow run number), pushes it and
 `ci-latest`, and installs the numbered image pinned by digest. Tests run against CI
-services. `ci-passed` marks images only after acceptance succeeds. Image tags may
+services. Database fault injection (`make resilience`) is an optional showcase
+drill, excluded from delivery CI; it remains available manually and in the
+developer-invoked `make local-tests` suite. `ci-passed` marks images only after acceptance succeeds. Image tags may
 move, including the numbered tag on a rerun; deployed references include a digest.
 
 Main calls `promote`: pull `ci-latest`, verify it matches `ci-passed`, compare its

@@ -1,0 +1,18 @@
+name: Platform tooling checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configuration and shell checks
+        run: make test
+      - name: Verify release manifest is current
+        run: |
+          python3 scripts/release.py
+          git diff --exit-code -- distribution.json

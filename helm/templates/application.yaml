@@ -1,0 +1,98 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - port: {{ .Values.port }}
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: {{ .Values.replicas }}
+  revisionHistoryLimit: 3
+  progressDeadlineSeconds: 600
+  strategy:
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      {{- if .Values.writableDirectory }}
+      initContainers:
+        - name: prepare-directory
+          image: {{ .Values.image | quote }}
+          imagePullPolicy: IfNotPresent
+          command: [sh, -c, 'cp -R "$SOURCE/." /workspace/']
+          env:
+            - name: SOURCE
+              value: {{ .Values.writableDirectory | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - {name: workspace, mountPath: /workspace}
+      {{- end }}
+      containers:
+        - name: application
+          image: {{ .Values.image | quote }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - {name: http, containerPort: {{ .Values.port }}}
+          env:
+            - {name: NPM_CONFIG_CACHE, value: /tmp/npm}
+            {{- with .Values.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: temporary, mountPath: /tmp}
+            {{- if .Values.writableDirectory }}
+            - name: workspace
+              mountPath: {{ .Values.writableDirectory | quote }}
+            {{- end }}
+          startupProbe:
+            httpGet: {path: {{ .Values.healthPath | quote }}, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: {{ .Values.healthPath | quote }}, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: {path: {{ .Values.healthPath | quote }}, port: http}
+            periodSeconds: 10
+      volumes:
+        - name: temporary
+          emptyDir: {sizeLimit: 64Mi}
+        {{- if .Values.writableDirectory }}
+        - name: workspace
+          emptyDir: {sizeLimit: 256Mi}
+        {{- end }}

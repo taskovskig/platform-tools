@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "image",
+    "replicas",
+    "port",
+    "healthPath",
+    "env",
+    "resources",
+    "writableDirectory"
+  ],
+  "properties": {
+    "image": {
+      "type": "string",
+      "minLength": 1
+    },
+    "replicas": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "healthPath": {
+      "type": "string",
+      "pattern": "^/"
+    },
+    "env": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "value"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "resources": {
+      "type": "object"
+    },
+    "writableDirectory": {
+      "type": "string",
+      "pattern": "^(/[^ ]*)?$"
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "files": {
+    ".github/workflows/acceptance.yaml": "c9286ea5b9c06cf81b3ee1aba9719927cc85e90b84202473808cedd1803c0492",
+    ".github/workflows/test.yaml": "1a8f89c780f0979dc46315a03df35946a0807e8441376e0108a9afb69bb64a82",
+    ".gitignore": "4d4ad19ce558da3c7da9a4186d7c39dd237f88007b7b80b3b042316617f014cc",
+    "Makefile": "624c7b56dc441edf296a848b43a26b8a8c86821d245bc2c996024c22a7fae30b",
+    "README.md": "0ce39446d12c0e689add5ffaba20dada09027fa91b69b06f26404f60c1738cf8",
+    "VERSION": "d0b4f9120ba026c00fa23cb84b4e1620a2e6436592e58155a5151653179572c0",
+    "helm/.helmignore": "1585a01b3ab89848c1f259a7c766a51237963d270e6a227cdf1c012d11eb0ee2",
+    "helm/Chart.yaml": "3b78a9724f5291dfb4cb74b1e810cdd395205655b973b7327833f2cdca6d72a5",
+    "helm/README.md": "5c1aa96887b4709ed1d9c8cce2b5b800d01409e356fe729f240ae4fd4c8565c8",
+    "helm/templates/NOTES.txt": "45429dda83688340d3bee2a046c473d329f4ad142dee68b7a0debc58893133f2",
+    "helm/templates/application.yaml": "b6db1cb7ec262a25b7a3585a2cf264a0b1eb79af469199f38d9178cbd7816449",
+    "helm/values.schema.json": "309fdb6f3c363c27e92b49c17e9fd0e27f0aa8d35cbc211a7085ea535470212a",
+    "helm/values.yaml": "95c8c286a1275b0116b2f4aed2b020b68587b069a9a08f966804989c66bc4356",
+    "scripts/browser-ci.sh": "9984d08221b3d5e142c29258adbd4f874a420c15d64d40c31d1c47cba738a807",
+    "scripts/check-http.py": "b3773eb139ada5630b57d23a0151cf3df1d4ad3ef8c425c2e1ae04905b1e5474",
+    "scripts/common.sh": "f797b4f12771288db0489626f7731dbced1c4430bedda889081d13d33e0a0a60",
+    "scripts/config.py": "af0d5ae8d57afd1bf4e6785db2b46486a4dcbd6610629702c8cb556b81812693",
+    "scripts/db-chart.sh": "ad674366b750457c821622e7161a0063db24c9aba424bd94d633bbdd97f99ce4",
+    "scripts/entry.sh": "19a6b8e2be7e86180d99ad6dcb1959717bfcd46b8ed125b2b0025b02244e7cf6",
+    "scripts/install-tools.sh": "3c0773840dc916eeab8b226341ccc46781a8623b4f9ecc339b5ea86b70a104b4",
+    "scripts/platform.sh": "2e1d424d10143f6f10d68f9be0adf636a708aa438c512e075b70fe87c39e4f11",
+    "scripts/release.py": "21e4e0186b7a1a4312541994afc3c8cc09e16d815b58abfeb55f8b070058e8ae",
+    "scripts/verify-helm.sh": "879253dec3f35c3a8c22e608e8f8667dfc3e83f9f7bdb3e9efbfa778ee4a5032",
+    "scripts/verify-resilience.sh": "a53605eca094dc7a83e7d72cbaa5360cd567a474ad980a26062100f8c30ee155",
+    "tests/chart.cjs": "41aedcffb0e8eebc74d6fe4797e4b92c3841b6f4e6e6b47ca054cb67f38cf523",
+    "tests/package-lock.json": "6a15781f3b0fb54d5dc3f2db7161be5a01dcce1097bcdb18ab18981f81e79c5b",
+    "tests/package.json": "869a80445b6ac7fbef0dceffcb8110726e8ccdbbbee0572f500f95266174a17f",
+    "tests/test_config.py": "84c6301ad5bf572fc5e7ef2c0a9f71af478d7532c5b40aaf0eacfd4a976c6001"
+  }
+}

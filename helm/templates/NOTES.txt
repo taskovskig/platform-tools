@@ -1,0 +1,5 @@
+Release {{ .Release.Name }} installed in {{ .Release.Namespace }}.
+Service port: {{ .Values.port }}. This release owns only its application.
+Repository workflow: make open
+History: make releases
+Rollback: make rollback SERVICE={{ .Release.Name }} REVISION=<revision>

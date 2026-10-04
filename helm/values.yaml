@@ -1,0 +1,10 @@
+image: sample-api:dev
+replicas: 1
+port: 8080
+healthPath: /hello
+env: []
+resources:
+  requests: {cpu: 100m, memory: 128Mi}
+  limits: {cpu: "1", memory: 256Mi}
+# Copy an image directory to a writable volume without changing image startup.
+writableDirectory: ""

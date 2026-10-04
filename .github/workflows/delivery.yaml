@@ -1,0 +1,81 @@
+name: Shared cluster delivery
+on:
+  workflow_call:
+permissions:
+  contents: read
+  packages: write
+jobs:
+  delivery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: ${{ github.ref == 'refs/heads/main' && 'app-dev' || 'app-ci' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Configure environment credentials
+        env:
+          KUBECONFIG_CONTENT: ${{ secrets.KUBECONFIG }}
+          TARGET_ENVIRONMENT: ${{ github.ref == 'refs/heads/main' && 'app-dev' || 'app-ci' }}
+        run: |
+          test -n "$KUBECONFIG_CONTENT" || { echo "Set KUBECONFIG in environment $TARGET_ENVIRONMENT." >&2; exit 1; }
+          umask 077
+          kubeconfig="$RUNNER_TEMP/platform-kubeconfig-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          printf '%s' "$KUBECONFIG_CONTENT" > "$kubeconfig"
+          printf 'KUBECONFIG=%s\nPLATFORM_ENVIRONMENT=%s\nGH_BUILD_NUMBER=%s\n' "$kubeconfig" "$TARGET_ENVIRONMENT" "$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+      - name: Fetch pinned platform release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: make platform-fetch
+      - name: Install pinned deployment tools
+        run: make install-tools
+      - name: Sign in to GHCR
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
+      - name: Reset CI releases and database data
+        if: github.ref != 'refs/heads/main'
+        run: make ci-reset
+      - name: Validate application charts
+        run: make chart-test
+      - name: Build, publish and install CI images
+        if: github.ref != 'refs/heads/main'
+        run: make ci-up
+      - name: Install test dependencies
+        if: github.ref != 'refs/heads/main'
+        run: |
+          npm ci
+          npx cypress install
+      - name: API tests and frontend build
+        if: github.ref != 'refs/heads/main'
+        run: make test
+      - name: Release isolation tests
+        if: github.ref != 'refs/heads/main'
+        run: make helm-test
+      - name: Database persistence and recovery tests
+        if: github.ref != 'refs/heads/main'
+        run: make resilience
+      - name: Browser tests against CI services
+        if: github.ref != 'refs/heads/main'
+        env:
+          TERM: xterm
+        run: make browser-ci
+      - name: Record passing CI images
+        if: github.ref != 'refs/heads/main'
+        run: make ci-passed
+      - name: Promote existing CI images and upgrade development
+        if: github.ref == 'refs/heads/main'
+        run: make promote
+      - name: Failure diagnostics
+        if: failure() && env.KUBECONFIG != ''
+        run: make diagnose
+      - name: Remove runner credentials
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/platform-kubeconfig-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" .platform/database.env
+          docker logout ghcr.io || true

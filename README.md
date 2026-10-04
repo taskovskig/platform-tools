@@ -56,52 +56,45 @@ path fields and their old files, and reduce database values to application-speci
 overrides. Verify deployment, persistence and release isolation before committing
 that consumer migration. No consumer migration is needed to publish this release.
 
-## Existing development cluster (v0.3.0)
+## Shared-cluster delivery (v0.4.0)
 
-The reusable `.github/workflows/development.yaml` runs the same acceptance suite
-on GitHub-hosted Linux AMD64 runners, using environment `development` and its
-`KUBECONFIG` secret. It accepts same-repository PRs only, serializes deployments,
-publishes public GHCR images with `GITHUB_TOKEN`, verifies anonymous pulls, and
-uses immutable image digests. A caller must grant `packages: write`, keep a
-required aggregate check that rejects skipped/failed deployment, and permit PR
-merge refs in the environment's branch policy. Configure an environment reviewer
-before granting PR code deployment access.
+`.github/workflows/delivery.yaml` is the reusable workflow for branch pushes.
+Callers must serialize the entire workflow (CI and promotion together) with one
+repository-scoped concurrency group and `cancel-in-progress: false`, grant
+`packages: write`, and use `secrets: inherit`. Non-main pushes select GitHub
+environment `app-ci`; main selects `app-dev`. The selected environment supplies
+`KUBECONFIG`. The API must be reachable by a hosted Linux AMD64 runner.
 
-Consumers select the existing-cluster path with `PLATFORM_ENVIRONMENT=development`
-and a `KUBECONFIG` file path, then run `make development-up`. A schema-v1 consumer
-adds this configuration (local defaults remain unchanged):
+Consumers configure `environments.app-ci` and `environments.app-dev`, each with
+`cluster`, matching `kind-<cluster>` context, matching namespace, and public GHCR
+`imagePrefix`. The supported namespaces are exactly `app-ci` and `app-dev`;
+production execution is disabled. `PLATFORM_ENVIRONMENT` selects one of them or
+`local` (default). Namespace creation and RBAC remain administrative operations.
 
-```json
-"environments": {
-  "development": {
-    "cluster": "testkube-samples",
-    "context": "kind-testkube-samples",
-    "namespace": "app-dev",
-    "imagePrefix": "ghcr.io/taskovskig/testkube-samples"
-  }
-}
-```
+Feature CI calls `ci-reset` first: uninstall configured applications and database,
+delete the database PVC and Secret, while retaining namespace and deployment RBAC.
+`ci-up` builds `ci-$GH_BUILD_NUMBER` (GitHub workflow run number), pushes it and
+`ci-latest`, and installs the numbered image pinned by digest. Tests run against CI
+services. `ci-passed` marks images only after acceptance succeeds. Image tags may
+move, including the numbered tag on a rerun; deployed references include a digest.
 
-This initial existing-cluster contract supports only `app-dev`, Linux amd64,
-public GHCR images, and a context matching `kind-<cluster>`. Production mode is
-rejected. The administrative provisioning workflow creates the namespaces and
-applies namespace-scoped deployment access for all three namespaces. An administrator then issues a
-namespace-scoped portable kubeconfig for `platform-deployer`. Deployment
-jobs never apply that RBAC manifest, create/delete namespaces, or create/delete
-clusters. `up` and `down` are rejected in development mode. The database remains
-an independent release and must contain development-only data; persistence and
-outage tests are intentionally disruptive within that namespace.
+Main calls `promote`: pull `ci-latest`, verify it matches `ci-passed`, compare its
+source-tree label to checked-out main, and require consistent CI build labels
+across applications. Add `dev-latest`, upgrade development, and smoke-test without
+building images or resetting development data. A latest image from another branch
+fails promotion before any development tag or deployment change. Rerun the intended
+feature CI then main promotion if aliases moved. Require up-to-date PR branches.
 
-Application outage hooks receive `KUBE_CONTEXT` alongside `KUBECONFIG_FILE` and
-`NAMESPACE`; use these explicit settings for every Kubernetes call. The database
-and application releases remain deployed after CI. Cancellation and failed
-upgrades can require manual namespace-scoped recovery. Namespace separation does
-not isolate shared-node resource failures. Production deployment is not included.
+The reusable workflow never invokes kind lifecycle commands. `local-tests` is a
+separate developer-only command, rejected in CI/shared modes. It installs local
+test dependencies and exercises the full original local kind acceptance flow,
+leaving the cluster running for inspection. Consumer Makefiles expose it as
+`make local-tests`; CI uses individual test commands against `app-ci` instead.
 
-GHCR packages start private: publish once, change both packages to public, then
-rerun if anonymous pulls failed. No cluster pull secret is required. Renew the
-Kubernetes credential before expiration. The application runbook owns the exact
-GitHub environment, branch protection, credential setup, and recovery commands.
+`app-prod` is provisioned but never deployed by this workflow. Application sources
+and Dockerfiles remain developer-owned. Namespace-scoped kubeconfigs should use
+the appropriate `platform-deployer` identity; credentials must be renewed before
+expiration. Shared namespaces still share node/control-plane failure domains.
 
 ## Cluster provisioning on main
 
@@ -122,8 +115,8 @@ create/delete the kind cluster, or deploy applications. Production provisioning
 creates its namespace and deployment access, but does not install workloads or
 enable production deployment. Each identity has the same deployment permissions
 restricted to its own namespace. Existing workloads must comply with the restricted
-policy for future pod creations. Disposable application CI remains unchanged;
-creating `app-ci` does not move those tests onto the shared cluster.
+policy for future pod creations. Application CI runs in `app-ci`; `app-dev` receives tested-image promotion.
+Disposable kind clusters are used only for developer-local tests.
 
 Before the first run, configure **this repository's** GitHub environment
 `platform-administration`:
@@ -147,14 +140,14 @@ when using a repository secret. A repository secret is also available to other
 eligible workflows in this repository; environment secrets provide narrower
 exposure. See [GitHub secret precedence](https://docs.github.com/en/actions/reference/security/secrets).
 
-The application repository's `development` environment keeps its own, less
-privileged `KUBECONFIG`. Do not replace it with the administrative credential.
+The application repository's `app-ci`, `app-dev`, and `app-prod` environments
+each keep their own namespace-scoped `KUBECONFIG`. Do not replace it with the administrative credential.
 After provisioning passes, create/renew the scoped application kubeconfig as
-needed and rerun the failed application development job. Existing token creation
+needed and rerun the failed application delivery job. Existing token creation
 and renewal remain administrative steps, not part of this provisioning workflow.
 
 No new platform tag or application pin update is needed to activate provisioning:
-it runs from `main`. Keep published v0.3.0 unchanged. Generate a fresh manifest
+it runs from `main`. Keep published tags unchanged. Generate a fresh manifest
 only when preparing the next platform release. Commit and push these workflow,
 manifest-source, script, test, and documentation changes normally.
 
@@ -190,7 +183,7 @@ commit and a new version/tag, not moving the published tag.
    git push origin v0.1.0
    ```
 
-4. Copy the JSON printed by `release.py` into the consumer's `platform.lock.json`. Pin its reusable workflow to `taskovskig/platform-tools/.github/workflows/acceptance.yaml@v0.1.0` as well. The consumer bootstrap checks both pins agree.
+4. Copy the JSON printed by `release.py` into the consumer's `platform.lock.json`. Pin its reusable workflow to `taskovskig/platform-tools/.github/workflows/delivery.yaml@<new-tag>` as well. The consumer bootstrap checks both pins agree.
 5. Run `make platform-fetch` without a local override. This downloads the GitHub tag archive, checks the manifest and every file, then atomically caches it under `.platform/tools/<manifest digest>`. A missing tag, mismatched checksum or unsafe archive fails without executing downloaded scripts. Review and commit the consumer pin upgrade after acceptance passes.
 
 The first release must be published before hosted consumer CI can resolve the reusable workflow. For private repositories, grant access to reusable workflows in GitHub settings and provide cross-repository read credentials for downloads; the caller's default token does not automatically grant access to a second private repository. Public repositories need no download credentials. Locally an authenticated `gh` CLI is used as a fallback for private archives.

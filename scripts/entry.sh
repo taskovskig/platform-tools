@@ -2,6 +2,7 @@
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
 case "${1:-help}" in
+  local-tests) bash "$TOOLS_ROOT/scripts/local-tests.sh" ;;
   version) cat "$TOOLS_ROOT/VERSION" ;;
   chart-test)
     deps="$STATE/test-deps/$(shasum -a 256 "$TOOLS_ROOT/tests/package-lock.json" | cut -d ' ' -f 1)"

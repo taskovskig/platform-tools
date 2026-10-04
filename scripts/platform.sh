@@ -10,7 +10,7 @@ doctor() {
   echo 'Required tools and Docker are available.'
 }
 cluster() {
-  [ "$PLATFORM_ENVIRONMENT" = local ] || { echo 'Cluster lifecycle operations are disabled for development.' >&2; exit 1; }
+  [ "$PLATFORM_ENVIRONMENT" = local ] || { echo 'Cluster lifecycle operations are disabled for shared environments.' >&2; exit 1; }
   doctor
   if ! kind get clusters | grep -qx "$CLUSTER"; then
     kind create cluster --name "$CLUSTER" --image "$KIND_IMAGE" --config "$KIND_CONFIG" --kubeconfig "$KUBECONFIG_FILE" --wait 120s
@@ -20,15 +20,18 @@ cluster() {
   chmod 600 "$KUBECONFIG_FILE"
 }
 build() {
-  TAG="$(git rev-parse --short HEAD)-$(date -u +%Y%m%d%H%M%S)-$$"
+  TAG="${TAG:-$(git rev-parse --short HEAD)-$(date -u +%Y%m%d%H%M%S)-$$}"
   # Use the developer's Dockerfiles verbatim. Only application inputs enter the
   # context: platform credentials, kubeconfig and test tooling cannot be copied.
   tar --exclude=node_modules --exclude=dist --exclude=.git -cf "$STATE/build-context.tar" \
     "${BUILD_CONTEXT[@]}"
   for app in $(applications); do
     local build_args=(-f "$(app_dockerfile "$app")" -t "$(app_image "$app"):$TAG")
-    if [ "$PLATFORM_ENVIRONMENT" = development ]; then
-      build_args+=(--platform "$IMAGE_PLATFORM")
+    if [ "$PLATFORM_ENVIRONMENT" != local ]; then
+      build_args+=(--platform "$IMAGE_PLATFORM"
+        --label "org.opencontainers.image.revision=$(git rev-parse HEAD)"
+        --label "io.platform.source-tree=$(git rev-parse HEAD^{tree})"
+        --label "io.platform.ci-build=$TAG")
       if [ -n "${GITHUB_REPOSITORY:-}" ]; then
         build_args+=(--label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY")
       fi
@@ -103,13 +106,74 @@ publish_images() {
     fi
   done
 }
-development_up() {
-  [ "$PLATFORM_ENVIRONMENT" = development ] || { echo 'Set PLATFORM_ENVIRONMENT=development.' >&2; exit 1; }
+require_ci() {
+  [ "$PLATFORM_ENVIRONMENT" = app-ci ] && [ "$NAMESPACE" = app-ci ] || { echo 'CI reset/build is restricted to app-ci.' >&2; exit 1; }
+  [ "$SERVICE" = all ] || { echo 'CI must process every application.' >&2; exit 1; }
+}
+ci_reset() {
+  require_ci
+  for app in $APPS; do h uninstall "$app" --ignore-not-found --wait --timeout 5m; done
+  h uninstall "$DB_RELEASE" --ignore-not-found --wait --timeout 5m
+  k delete pvc "$DB_PVC" --ignore-not-found=true --wait=true --timeout=120s
+  k delete secret "$DB_SECRET" --ignore-not-found=true
+}
+ci_up() {
+  require_ci
+  [[ "${GH_BUILD_NUMBER:-}" =~ ^[1-9][0-9]*$ ]] || { echo 'Set GH_BUILD_NUMBER to the GitHub run number.' >&2; exit 1; }
+  TAG="ci-$GH_BUILD_NUMBER"
   doctor
-  k get serviceaccount default >/dev/null
-  legacy_guard
   build
   publish_images
+  for app in $APPS; do
+    docker tag "$(app_image "$app"):$TAG" "$(app_image "$app"):ci-latest"
+    docker push "$(app_image "$app"):ci-latest"
+    printf '%s:%s@%s\n' "$(app_image "$app")" "$TAG" "$(cat "$STATE/images/$app" | cut -d @ -f 2)" > "$STATE/images/$app.tagged"
+    mv "$STATE/images/$app.tagged" "$STATE/images/$app"
+  done
+  db_up
+  deploy
+  check
+}
+ci_passed() {
+  require_ci
+  # Called only after the complete acceptance suite has passed.
+  TAG=$(cat "$STATE/built-tag")
+  [[ "$TAG" =~ ^ci-[1-9][0-9]*$ ]] || { echo 'Missing CI build tag.' >&2; exit 1; }
+  for app in $APPS; do
+    docker tag "$(app_image "$app"):$TAG" "$(app_image "$app"):ci-passed"
+    docker push "$(app_image "$app"):ci-passed"
+  done
+}
+promote() {
+  [ "$PLATFORM_ENVIRONMENT" = app-dev ] && [ "$NAMESPACE" = app-dev ] || { echo 'Promotion is restricted to app-dev.' >&2; exit 1; }
+  [ "$SERVICE" = all ] || { echo 'Promotion must process every application.' >&2; exit 1; }
+  mkdir -p "$STATE/images"
+  local tree revision build candidate passed first_build=''
+  tree=$(git rev-parse HEAD^{tree})
+  # Validate every image before moving any development tags or Helm releases.
+  for app in $APPS; do
+    docker pull "$(app_image "$app"):ci-latest"
+    docker pull "$(app_image "$app"):ci-passed"
+    candidate=$(docker image inspect "$(app_image "$app"):ci-latest" --format '{{.Id}}')
+    passed=$(docker image inspect "$(app_image "$app"):ci-passed" --format '{{.Id}}')
+    [ "$candidate" = "$passed" ] || { echo "$app: ci-latest has not passed acceptance." >&2; exit 1; }
+    revision=$(docker image inspect "$candidate" --format '{{index .Config.Labels "io.platform.source-tree"}}')
+    [ "$revision" = "$tree" ] || { echo "$app: ci-latest does not match merged source. Rerun CI for the intended branch before promotion." >&2; exit 1; }
+    build=$(docker image inspect "$candidate" --format '{{index .Config.Labels "io.platform.ci-build"}}')
+    [[ "$build" =~ ^ci-[1-9][0-9]*$ ]] || { echo 'Missing CI build identity.' >&2; exit 1; }
+    [ -z "$first_build" ] || [ "$first_build" = "$build" ] || { echo 'Application images are from different CI builds.' >&2; exit 1; }
+    first_build="$build"
+    printf '%s\n' "$candidate" > "$STATE/images/$app.id"
+  done
+  TAG=dev-latest
+  for app in $APPS; do
+    docker tag "$(cat "$STATE/images/$app.id")" "$(app_image "$app"):$TAG"
+    docker push "$(app_image "$app"):$TAG"
+    local reference
+    reference=$(docker image inspect "$(app_image "$app"):$TAG" --format '{{index .RepoDigests 0}}')
+    [[ "$reference" = "$(app_image "$app")@sha256:"* ]] && [[ "${reference##*@sha256:}" =~ ^[a-f0-9]{64}$ ]] || { echo 'Invalid promoted image digest.' >&2; exit 1; }
+    printf '%s:%s@%s\n' "$(app_image "$app")" "$TAG" "${reference##*@}" > "$STATE/images/$app"
+  done
   db_up
   deploy
   check
@@ -120,7 +184,7 @@ deploy() {
   for app in $(applications); do
     docker image inspect "$(app_image "$app"):$TAG" >/dev/null
     local reference="$(app_image "$app"):$TAG"
-    if [ "$PLATFORM_ENVIRONMENT" = development ]; then
+    if [ "$PLATFORM_ENVIRONMENT" != local ]; then
       reference=$(cat "$STATE/images/$app")
     else
       kind load docker-image --name "$CLUSTER" "$(app_image "$app"):$TAG"
@@ -184,12 +248,14 @@ open() {
 case "${1:-help}" in
   doctor) doctor ;;
   up) applications >/dev/null; cluster; legacy_guard; db_up; build; deploy; check; echo 'Run make open to access the configured services.' ;;
-  development-up) applications >/dev/null; development_up ;;
+  ci-reset) ci_reset ;;
+  ci-up) ci_up ;;
+  ci-passed) ci_passed ;;
+  promote) promote ;;
   deploy)
+    [ "$PLATFORM_ENVIRONMENT" = local ] || { echo 'Use ci-up or promote for shared environments.' >&2; exit 1; }
     applications >/dev/null
-    doctor; legacy_guard; build
-    if [ "$PLATFORM_ENVIRONMENT" = development ]; then publish_images; fi
-    deploy; check ;;
+    doctor; legacy_guard; build; deploy; check ;;
   db-up) doctor; db_up ;;
   rollback)
     REVISION="${REVISION:?Set REVISION to a Helm revision listed by make releases}"
@@ -219,8 +285,8 @@ case "${1:-help}" in
     k logs "statefulset/$DB_STATEFULSET" --tail=50 || true ;;
   releases) for release in $APPS "$DB_RELEASE"; do echo "Release: $release"; h history "$release"; done ;;
   down)
-    [ "$PLATFORM_ENVIRONMENT" = local ] || { echo 'Deleting the shared development cluster is forbidden.' >&2; exit 1; }
+    [ "$PLATFORM_ENVIRONMENT" = local ] || { echo 'Deleting the shared cluster is forbidden.' >&2; exit 1; }
     [ "${CONFIRM:-}" = "$CLUSTER" ] || { echo "Deletes local cluster AND database. Run make down CONFIRM=$CLUSTER" >&2; exit 1; }
     kind delete cluster --name "$CLUSTER" --kubeconfig "$KUBECONFIG_FILE" ;;
-  *) echo 'Commands: doctor up db-up deploy rollback render check open status logs diagnose releases down' ;;
+  *) echo 'Commands: doctor up ci-reset ci-up ci-passed promote db-up deploy rollback render check open status logs diagnose releases down' ;;
 esac

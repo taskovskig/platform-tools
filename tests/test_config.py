@@ -46,20 +46,20 @@ class ConfigTests(unittest.TestCase):
         self.assertNotEqual(self.run_config().returncode, 0)
 
     def test_development_profile_is_explicit_and_namespace_restricted(self):
-        self.config['environments'] = {'development': {
-            'cluster': 'testkube-samples', 'namespace': 'app-dev',
+        self.config['environments'] = {'app-ci': {
+            'cluster': 'testkube-samples', 'namespace': 'app-ci',
             'context': 'kind-testkube-samples', 'imagePrefix': 'ghcr.io/example/sample'}}
-        result = self.run_config('development')
+        result = self.run_config('app-ci')
         self.assertEqual(result.returncode, 0, result.stderr)
         output = subprocess.check_output(['bash', '-c', result.stdout +
             '\nprintf "%s\\n" "$CLUSTER" "$NAMESPACE" "$KUBE_CONTEXT" "$NAMESPACE_MANIFEST" "$DB_ACCOUNT"; app_image frontend'], text=True)
-        self.assertEqual(output.splitlines(), ['testkube-samples', 'app-dev', 'kind-testkube-samples', '', '', 'ghcr.io/example/sample/frontend'])
+        self.assertEqual(output.splitlines(), ['testkube-samples', 'app-ci', 'kind-testkube-samples', '', '', 'ghcr.io/example/sample/frontend'])
         self.assertNotEqual(self.run_config('production').returncode, 0)
-        self.config['environments']['development']['namespace'] = 'app-prod'
-        self.assertNotEqual(self.run_config('development').returncode, 0)
-        self.config['environments']['development']['namespace'] = 'app-dev'
-        self.config['environments']['development']['context'] = 'another-cluster'
-        self.assertNotEqual(self.run_config('development').returncode, 0)
+        self.config['environments']['app-ci']['namespace'] = 'app-prod'
+        self.assertNotEqual(self.run_config('app-ci').returncode, 0)
+        self.config['environments']['app-ci']['namespace'] = 'app-ci'
+        self.config['environments']['app-ci']['context'] = 'another-cluster'
+        self.assertNotEqual(self.run_config('app-ci').returncode, 0)
 
     def test_rejects_escape_from_project(self):
         self.config['buildContext']=['../file'];self.assertNotEqual(self.run_config().returncode,0)

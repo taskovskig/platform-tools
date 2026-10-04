@@ -5,9 +5,12 @@ cd "${PROJECT_ROOT:?}"
 set -euo pipefail
 mkdir -p .platform/bin
 cd .platform/bin
-curl -fsSLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
-curl -fsSLo kind.sha256sum https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64.sha256sum
-echo "$(cut -d ' ' -f 1 kind.sha256sum)  kind" | sha256sum --check
+if [ "${PLATFORM_ENVIRONMENT:-local}" = local ]; then
+  curl -fsSLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
+  curl -fsSLo kind.sha256sum https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64.sha256sum
+  echo "$(cut -d ' ' -f 1 kind.sha256sum)  kind" | sha256sum --check
+  chmod +x kind
+fi
 curl -fsSLo kubectl https://dl.k8s.io/release/v1.37.0/bin/linux/amd64/kubectl
 curl -fsSLo kubectl.sha256 https://dl.k8s.io/release/v1.37.0/bin/linux/amd64/kubectl.sha256
 echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
@@ -16,5 +19,5 @@ curl -fsSLo helm.sha256 https://get.helm.sh/helm-v4.3.0-linux-amd64.tar.gz.sha25
 echo "$(cut -d ' ' -f 1 helm.sha256)  helm.tar.gz" | sha256sum --check
 tar -xzf helm.tar.gz linux-amd64/helm
 mv linux-amd64/helm helm
-chmod +x kind kubectl helm
+chmod +x kubectl helm
 if [ -n "${GITHUB_PATH:-}" ]; then echo "$PWD" >> "$GITHUB_PATH"; fi

@@ -17,7 +17,11 @@ args=sys.argv[1:]
 with open(os.environ['TRACE'], 'a') as log: log.write(json.dumps([name, *args])+'\\n')
 if name == 'git': print('abc1234')
 if name == 'docker' and args[:2] == ['image', 'inspect'] and '--format' in args:
-    print(args[2].rsplit(':', 1)[0]+'@sha256:'+'a'*64)
+    fmt=args[-1]
+    if fmt == '{{.Id}}': print('sha256:' + ('b' if args[2].endswith(':ci-passed') and os.environ.get('UNTESTED') else 'a')*64)
+    elif 'source-tree' in fmt: print('wrong' if os.environ.get('WRONG_TREE') else 'abc1234')
+    elif 'ci-build' in fmt: print('ci-42')
+    else: print(args[2].rsplit(':', 1)[0]+'@sha256:'+'a'*64)
 if name == 'docker' and 'manifest' in args and os.environ.get('PRIVATE_IMAGE'):
     sys.exit(1)
 if name == 'kind':
@@ -42,7 +46,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 
-class DevelopmentTests(unittest.TestCase):
+class DeliveryTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -55,8 +59,9 @@ class DevelopmentTests(unittest.TestCase):
             'applications': {'frontend': {'dockerfile': 'file', 'values': 'file', 'image': 'sample', 'port': 3000, 'localPort': 4300}},
             'checks': [{'service': 'frontend', 'path': '/', 'body': 'ok'}],
             'database': {'release': 'db', 'statefulset': 'db', 'secret': 'database', 'pvc': 'data-db-0', 'values': 'file', 'client': 'frontend', 'outageCheck': 'file', 'developmentUser': 'user', 'developmentPassword': 'password'},
-            'environments': {'development': {'cluster': 'testkube-samples', 'context': 'kind-testkube-samples', 'namespace': 'app-dev', 'imagePrefix': 'ghcr.io/example/project'}},
+            'environments': {'app-ci': {'cluster': 'testkube-samples', 'context': 'kind-testkube-samples', 'namespace': 'app-ci', 'imagePrefix': 'ghcr.io/example/project'}},
         }
+        self.config['environments']['app-dev'] = dict(self.config['environments']['app-ci'], namespace='app-dev')
         (self.root / 'platform.json').write_text(json.dumps(self.config))
         (self.root / 'bin').mkdir()
         for tool in ['kubectl', 'helm', 'docker', 'kind', 'git', 'shasum']:
@@ -70,7 +75,7 @@ class DevelopmentTests(unittest.TestCase):
         thread.start()
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
-        self.env = dict(os.environ, PROJECT_ROOT=str(self.root), PLATFORM_ENVIRONMENT='development',
+        self.env = dict(os.environ, PROJECT_ROOT=str(self.root), PLATFORM_ENVIRONMENT='app-ci', GH_BUILD_NUMBER='42',
                         KUBECONFIG=str(self.root / 'kubeconfig'), TRACE=str(self.root / 'trace'),
                         HTTP_PORT=str(self.server.server_port), PATH=str(self.root / 'bin')+os.pathsep+os.environ['PATH'])
 
@@ -82,21 +87,22 @@ class DevelopmentTests(unittest.TestCase):
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
     def test_deploy_publishes_digest_and_never_manages_shared_cluster(self):
-        result = self.run_platform('development-up')
+        result = self.run_platform('ci-up')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         calls = self.trace()
         self.assertFalse(any(call[0] == 'kind' for call in calls))
-        self.assertTrue(any(call[:2] == ['docker', 'push'] for call in calls))
+        for tag in ['ci-42', 'ci-latest']:
+            self.assertTrue(any(call[:2] == ['docker', 'push'] and call[-1].endswith(':'+tag) for call in calls))
         self.assertTrue(any('--platform' in call and 'linux/amd64' in call for call in calls))
         for call in calls:
             if call[0] in ('kubectl', 'helm') and '--kubeconfig' in call:
                 self.assertIn('kind-testkube-samples', call)
-                self.assertEqual(call[call.index('-n')+1], 'app-dev')
+                self.assertEqual(call[call.index('-n')+1], 'app-ci')
         upgrades = [call for call in calls if call[0] == 'helm' and 'upgrade' in call]
         application = [call for call in upgrades if 'frontend' in call]
         self.assertTrue(application)
         for call in application:
-            self.assertIn('image=ghcr.io/example/project/frontend@sha256:'+'a'*64, call)
+            self.assertIn('image=ghcr.io/example/project/frontend:ci-42@sha256:'+'a'*64, call)
         self.assertFalse(any('namespace.json' in argument for call in calls for argument in call))
         self.assertFalse(any('app-prod' in call for call in calls))
 
@@ -120,9 +126,61 @@ class DevelopmentTests(unittest.TestCase):
                 self.assertEqual(self.trace(), [])
 
     def test_private_package_stops_before_database_or_application_mutations(self):
-        result = self.run_platform('development-up', PRIVATE_IMAGE='1')
+        result = self.run_platform('ci-up', PRIVATE_IMAGE='1')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('public', result.stderr)
         calls = self.trace()
         self.assertFalse(any(call[0] == 'helm' and 'upgrade' in call for call in calls))
         self.assertFalse(any(call[0] == 'kubectl' and ('apply' in call or 'create' in call) for call in calls))
+
+    def test_ci_reset_removes_releases_pvc_and_secret_only_in_ci(self):
+        result = self.run_platform('ci-reset')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.trace()
+        self.assertEqual([call[call.index('uninstall')+1] for call in calls if 'uninstall' in call], ['frontend', 'db'])
+        self.assertTrue(any('delete' in call and 'pvc' in call and 'data-db-0' in call for call in calls))
+        self.assertTrue(any('delete' in call and 'secret' in call and 'database' in call for call in calls))
+        for call in calls:
+            self.assertEqual(call[call.index('-n')+1], 'app-ci')
+        before = list(calls)
+        result = self.run_platform('ci-reset', PLATFORM_ENVIRONMENT='app-dev')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(before, self.trace())
+
+    def test_promotion_retags_without_building_or_deleting(self):
+        result = self.run_platform('promote', PLATFORM_ENVIRONMENT='app-dev')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = self.trace()
+        self.assertTrue(any(call[:2] == ['docker', 'pull'] and call[-1].endswith(':ci-latest') for call in calls))
+        self.assertTrue(any(call[:2] == ['docker', 'push'] and call[-1].endswith(':dev-latest') for call in calls))
+        self.assertFalse(any('build' in call or 'uninstall' in call or 'delete' in call or call[0]=='kind' for call in calls))
+        self.assertTrue(any('image=ghcr.io/example/project/frontend:dev-latest@sha256:'+'a'*64 in call for call in calls))
+        for call in calls:
+            if call[0] in ('kubectl', 'helm') and '--kubeconfig' in call:
+                self.assertEqual(call[call.index('-n')+1], 'app-dev')
+
+    def test_unpassed_or_wrong_source_images_cannot_be_promoted(self):
+        for flag in ['UNTESTED', 'WRONG_TREE']:
+            with self.subTest(flag=flag):
+                result = self.run_platform('promote', PLATFORM_ENVIRONMENT='app-dev', **{flag:'1'})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(any(call[:2] in (['docker','tag'], ['docker','push']) or 'upgrade' in call for call in self.trace()))
+
+    def test_local_tests_refuse_workflow_or_shared_environment(self):
+        for values in [dict(CI='true', PLATFORM_ENVIRONMENT='local'), dict(CI='', PLATFORM_ENVIRONMENT='app-ci')]:
+            result = subprocess.run(['bash', str(TOOLS/'scripts/local-tests.sh')], env=dict(self.env, **values), capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(self.trace(), [])
+
+    def test_local_tests_run_acceptance_in_order(self):
+        for tool in ['make', 'npm', 'npx']:
+            path = self.root / 'bin' / tool
+            path.write_text(MOCK)
+            path.chmod(0o755)
+        result = subprocess.run(['bash', str(TOOLS/'scripts/local-tests.sh')], env=dict(self.env, CI='', PLATFORM_ENVIRONMENT='local'), capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.trace(), [
+            ['make', 'doctor'], ['npm', 'ci'], ['npx', 'cypress', 'install'],
+            ['make', 'test'], ['make', 'chart-test'], ['make', 'up'],
+            ['make', 'helm-test'], ['make', 'resilience'], ['make', 'browser-ci'],
+        ])

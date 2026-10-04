@@ -13,7 +13,7 @@ export KIND_EXPERIMENTAL_PROVIDER=docker
 export HELM_CACHE_HOME="$STATE/helm/cache"
 export HELM_CONFIG_HOME="$STATE/helm/config"
 export HELM_DATA_HOME="$STATE/helm/data"
-if [ "$PLATFORM_ENVIRONMENT" = development ]; then
+if [ "$PLATFORM_ENVIRONMENT" != local ]; then
   KUBECONFIG_FILE="${KUBECONFIG:?Set KUBECONFIG to a deployment credential file}"
   [ -f "$KUBECONFIG_FILE" ] || { echo 'KUBECONFIG must name an existing file.' >&2; exit 1; }
 else

@@ -15,12 +15,12 @@ def path(v):
     return v
 def bind(k, v): print(f'{k}={shlex.quote(str(v))}')
 environment = os.environ.get('PLATFORM_ENVIRONMENT', 'local')
-assert environment in ('local', 'development'), 'Only local and development are supported; production deployment is disabled'
+assert environment in ('local', 'app-ci', 'app-dev'), 'Only local, app-ci and app-dev are supported; production deployment is disabled'
 bind('PLATFORM_ENVIRONMENT', environment)
 bind('IMAGE_PLATFORM', 'linux/amd64')
-if environment == 'development':
-    target = c['environments']['development']
-    assert target['namespace'] == 'app-dev', 'Development must use app-dev'
+if environment != 'local':
+    target = c['environments'][environment]
+    assert target['namespace'] == environment, 'Environment and namespace must match'
     c['cluster'] = name(target['cluster'])
     c['namespace'] = target['namespace']
     assert target['context'] == 'kind-' + c['cluster'], 'Context must match the configured kind cluster'

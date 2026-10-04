@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Fault injection targets only the configured local namespace or app-dev; never production.
+# Fault injection targets only the configured local namespace or app-ci; never production.
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
+[ "$PLATFORM_ENVIRONMENT" = local ] || [ "$PLATFORM_ENVIRONMENT" = app-ci ] || { echo "Fault injection is limited to local and app-ci." >&2; exit 1; }
 psql_query() { k exec "$DB_STATEFULSET-0" -- sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "$1"' sh "$1"; }
 restore() { k scale "statefulset/$DB_STATEFULSET" --replicas=1 >/dev/null; }
 trap restore EXIT

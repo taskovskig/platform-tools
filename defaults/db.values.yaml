@@ -1,0 +1,23 @@
+# Application overrides must select image.tag explicitly.
+settings:
+  superuser:
+    secretKey: POSTGRES_USER
+  superuserPassword:
+    secretKey: POSTGRES_PASSWORD
+podSecurityContext:
+  fsGroup: 999
+  supplementalGroups: [999]
+  seccompProfile: {type: RuntimeDefault}
+storage:
+  volumeName: data
+  requestedSize: 1Gi
+  className: standard
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+resources:
+  requests: {cpu: 100m, memory: 128Mi}
+  limits: {cpu: "1", memory: 512Mi}
+initResources:
+  requests: {cpu: 50m, memory: 32Mi}
+  limits: {cpu: 500m, memory: 128Mi}

@@ -56,11 +56,14 @@ legacy_guard() {
 }
 db_up() {
   legacy_guard
+  python3 "$TOOLS_ROOT/scripts/render-infrastructure.py" "$STATE/infrastructure" "$NAMESPACE" "$DB_RELEASE" "$DB_SECRET"
+  NAMESPACE_MANIFEST="${NAMESPACE_MANIFEST:-$STATE/infrastructure/namespace.json}"
+  DB_ACCOUNT="${DB_ACCOUNT:-$STATE/infrastructure/db-serviceaccount.json}"
   credentials
   k apply -f "$DB_ACCOUNT"
   local chart
   chart=$(bash "$TOOLS_ROOT/scripts/db-chart.sh")
-  h upgrade --install "$DB_RELEASE" "$chart" -f "$DB_VALUES" --wait --timeout 10m --history-max 10
+  h upgrade --install "$DB_RELEASE" "$chart" -f "$TOOLS_ROOT/defaults/db.values.yaml" -f "$STATE/infrastructure/db.values.json" -f "$DB_VALUES" --wait --timeout 10m --history-max 10
 }
 render() {
   : > "$STATE/rendered.yaml"

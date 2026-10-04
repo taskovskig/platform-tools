@@ -19,6 +19,31 @@ class ConfigTests(unittest.TestCase):
         out=subprocess.check_output(['bash','-c',command],cwd=self.root,text=True)
         self.assertIn('example-cluster',out);self.assertIn("a'$(touch unwanted)",out);self.assertIn('3000',out)
         self.assertFalse((self.root/'unwanted').exists())
+    def test_optional_infrastructure_uses_platform_defaults(self):
+        del self.config['kindConfig']
+        del self.config['namespaceManifest']
+        del self.config['database']['serviceAccountManifest']
+        result = self.run_config()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = subprocess.check_output(['bash', '-c', result.stdout +
+            '\nprintf "%s\\n" "$KIND_CONFIG" "$NAMESPACE_MANIFEST" "$DB_ACCOUNT"'], text=True)
+        self.assertEqual(output.splitlines(), [str(SCRIPT.parent.parent / 'defaults/kind.yaml'), '', ''])
+
+    def test_explicit_infrastructure_overrides_remain_supported(self):
+        result = self.run_config()
+        output = subprocess.check_output(['bash', '-c', result.stdout +
+            '\nprintf "%s\\n" "$KIND_CONFIG" "$NAMESPACE_MANIFEST" "$DB_ACCOUNT"'], text=True)
+        self.assertEqual(output.splitlines(), ['file', 'file', 'file'])
+
+    def test_invalid_explicit_infrastructure_does_not_fall_back(self):
+        for key in ('kindConfig', 'namespaceManifest'):
+            with self.subTest(key=key):
+                self.config[key] = 'missing'
+                self.assertNotEqual(self.run_config().returncode, 0)
+                self.config[key] = 'file'
+        self.config['database']['serviceAccountManifest'] = '../file'
+        self.assertNotEqual(self.run_config().returncode, 0)
+
     def test_rejects_escape_from_project(self):
         self.config['buildContext']=['../file'];self.assertNotEqual(self.run_config().returncode,0)
     def test_rejects_unknown_check_service(self):

@@ -25,12 +25,15 @@ for check in c['checks']:
 db = c['database']
 assert db['client'] in apps
 for k in ('release','statefulset','secret','pvc'): name(db[k])
-for k in ('values','serviceAccountManifest','outageCheck'): path(db[k])
+for k in ('values','outageCheck'): path(db[k])
+if 'serviceAccountManifest' in db: path(db['serviceAccountManifest'])
 bind('CLUSTER', name(c['cluster'])); bind('NAMESPACE', name(c['namespace']))
-bind('KIND_CONFIG', path(c['kindConfig'])); bind('NAMESPACE_MANIFEST', path(c['namespaceManifest']))
+bind('KIND_CONFIG', path(c['kindConfig']) if 'kindConfig' in c else Path(__file__).resolve().parents[1] / 'defaults/kind.yaml')
+bind('NAMESPACE_MANIFEST', path(c['namespaceManifest']) if 'namespaceManifest' in c else '')
 bind('APPS', ' '.join(apps))
 print('BUILD_CONTEXT=('+' '.join(shlex.quote(path(p)) for p in c['buildContext'])+')')
-for key, field in {'DB_RELEASE':'release','DB_VALUES':'values','DB_ACCOUNT':'serviceAccountManifest','DB_STATEFULSET':'statefulset','DB_PVC':'pvc','DB_SECRET':'secret','DB_USER':'developmentUser','DB_PASSWORD':'developmentPassword','DB_CLIENT':'client','DB_OUTAGE_CHECK':'outageCheck'}.items(): bind(key,db[field])
+for key, field in {'DB_RELEASE':'release','DB_VALUES':'values','DB_STATEFULSET':'statefulset','DB_PVC':'pvc','DB_SECRET':'secret','DB_USER':'developmentUser','DB_PASSWORD':'developmentPassword','DB_CLIENT':'client','DB_OUTAGE_CHECK':'outageCheck'}.items(): bind(key,db[field])
+bind('DB_ACCOUNT', db.get('serviceAccountManifest', ''))
 for field in ('release','statefulset','pvc'): bind('LEGACY_'+field.upper(), name(c['legacy'][field]) if c.get('legacy',{}).get(field) else '')
 for field in ('dockerfile','image','values','port','localPort'):
     print(f'app_{field}() {{ case "$1" in')

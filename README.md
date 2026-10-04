@@ -4,11 +4,57 @@ Platform-team-owned tooling for local Kubernetes application environments. Consu
 
 ## Ownership and consumer contract
 
-The application repository owns `platform.json`, a thin Makefile/bootstrap, Helm values, build inputs, HTTP expectations, browser tests and its database-outage assertion. The platform owns lifecycle scripts, chart templates, tool/dependency versions, release-isolation tests and the generic persistence drill. Developer application code and Dockerfiles are not modified.
+The application repository owns `platform.json`, a thin Makefile/bootstrap, application Helm values and database overrides, build inputs, HTTP expectations, browser tests and its database-outage assertion. The platform owns local infrastructure defaults, lifecycle scripts, chart templates, tool/dependency versions, release-isolation tests and the generic persistence drill. Developer application code and Dockerfiles are not modified.
 
 The current contract supports named stateless HTTP applications and one optional-in-use local PostgreSQL service (database configuration is required by schema v1). The local database bootstrap requires a fresh cluster or matching credentials; it never rotates an initialized database. Production managed databases require a separate provisioning path. Image versions and protocol are deliberately constrained to this initial MVP.
 
 `PROJECT_ROOT` must point to the consumer checkout. Scripts resolve values/build paths relative to that checkout and chart/runtime paths relative to this package. They use a dedicated kubeconfig and explicit cluster context. Application releases are independent of the PostgreSQL release. The shared chart's version is coupled to the platform tag so a consumer cannot accidentally combine incompatible tooling and chart versions.
+
+## Infrastructure defaults (v0.2.0)
+
+Existing schema-v1 consumers remain supported without changes. Projects can omit
+these `platform.json` fields to use the platform defaults:
+
+| Optional field | Default |
+| --- | --- |
+| `kindConfig` | `defaults/kind.yaml`: one control-plane node |
+| `namespaceManifest` | Generated namespace using `namespace`, with restricted Pod Security pinned to v1.37 |
+| `database.serviceAccountManifest` | Generated service account named after `database.release`, in the project namespace, with token automount disabled |
+
+An explicitly supplied path must exist; invalid overrides fail rather than falling
+back silently. Generated manifests live in the consumer's ignored
+`.platform/infrastructure/` directory and are recreated before database deployment.
+The platform package remains immutable. Custom service-account manifests must match
+`serviceAccount.name` in the project's database values.
+
+Database Helm values are applied in this order (last file wins):
+
+1. Platform `defaults/db.values.yaml`: security context, credential key names,
+   storage retention, storage size/class, and resource defaults.
+2. Generated project names: release/fullname, existing Secret, and service account.
+3. Required project `database.values`: PostgreSQL image version, database name,
+   and any intentional overrides.
+
+Keep the PostgreSQL image tag explicit in project values; the platform defaults
+intentionally do not select an image version. A minimal project override is:
+
+```yaml
+image:
+  tag: 17-bookworm
+env:
+  - {name: POSTGRES_DB, value: api-db}
+```
+
+Review database upgrades separately from tooling upgrades. Helm merges maps but
+replaces lists, so an application `env` override must include every required entry.
+Existing full database values files continue to override the new defaults.
+Application chart values (ports, health endpoints, images, writable paths and
+resource overrides) remain application-owned.
+
+After publishing v0.2.0, consumers may upgrade both pins, remove the three optional
+path fields and their old files, and reduce database values to application-specific
+overrides. Verify deployment, persistence and release isolation before committing
+that consumer migration. No consumer migration is needed to publish this release.
 
 ## First release
 

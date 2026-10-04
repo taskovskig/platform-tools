@@ -1,5 +1,35 @@
 # Platform tools
 
+## Install the platform CLI
+
+The `platform-tools-cli` Python package is distributed directly from this repository's immutable release tags. No PyPI publication or application-owned bootstrap source is required. Python 3.10+, Git and pipx are prerequisites.
+
+```sh
+pipx install 'git+https://github.com/taskovskig/platform-tools.git@v0.5.0'
+pipx ensurepath
+platform-tools --version
+```
+
+Open a new shell if the command is not yet on PATH. To update an existing installation to a reviewed version, use `pipx install --force` with the explicit tagged URL; do not use an unpinned branch. [pipx supports Git sources](https://pipx.pypa.io/latest/how-to/install-pipx.html).
+
+Run commands inside an application checkout (including subdirectories), or use `platform-tools --project /path/to/app fetch`. `--version` reports the installed CLI version; `version` reports the application's pinned platform release. The CLI verifies downloaded/cached files against `platform.lock.json` and checks the reusable workflow pin. Lock `cliApiVersion: 1` identifies the supported bootstrap protocol, independent of the release version; an unsupported value fails before downloading or executing anything. Older locks without that field default to protocol 1.
+
+The reusable delivery workflow installs the CLI in a runner-local virtual environment before invoking Make. The installer trusts the reviewed GitHub release tag; the subsequent platform payload is additionally verified against the application's manifest checksum. A missing CLI makes Make stop with installation instructions.
+
+For platform development, install this checkout with `pipx install --force .`, then use `PLATFORM_TOOLS_DIR=../platform-tools make <target>` from the application. The override remains forbidden in CI.
+
+Documentation rendering is an optional extra, also owned here:
+
+```sh
+pipx install --force 'platform-tools-cli[docs] @ git+https://github.com/taskovskig/platform-tools.git@v0.5.0'
+platform-render-design PLATFORM-DESIGN.md PLATFORM-DESIGN.pdf
+```
+
+The existing case-study layout is retained. Input/output paths now come from arguments; installing the base CLI does not install ReportLab. The Markdown and generated PDF remain application-owned.
+
+Before publishing, align `VERSION`, `platform_tools.__version__`, and the CLI installation tag in `delivery.yaml`; run tests and generate the release manifest. Publish v0.5.0 before upgrading application workflow/lock pins. Package installation is validated by the platform checks workflow. Bootstrap tests now live in `tests/test_cli.py` in this repository.
+
+
 Platform-team-owned tooling for local Kubernetes application environments. Consumers pin a Git tag and SHA-256 of `distribution.json`; that manifest pins every file in the package, including the shared Helm chart and reusable workflow. Do not move or overwrite published tags.
 
 ## Ownership and consumer contract
@@ -183,7 +213,7 @@ commit and a new version/tag, not moving the published tag.
    git push origin v0.1.0
    ```
 
-4. Copy the JSON printed by `release.py` into the consumer's `platform.lock.json`. Pin its reusable workflow to `taskovskig/platform-tools/.github/workflows/delivery.yaml@<new-tag>` as well. The consumer bootstrap checks both pins agree.
+4. Copy the JSON printed by `release.py` into the consumer's `platform.lock.json`. Pin its reusable workflow to `taskovskig/platform-tools/.github/workflows/delivery.yaml@<new-tag>` as well. The installed CLI checks both pins agree.
 5. Run `make platform-fetch` without a local override. This downloads the GitHub tag archive, checks the manifest and every file, then atomically caches it under `.platform/tools/<manifest digest>`. A missing tag, mismatched checksum or unsafe archive fails without executing downloaded scripts. Review and commit the consumer pin upgrade after acceptance passes.
 
 The first release must be published before hosted consumer CI can resolve the reusable workflow. For private repositories, grant access to reusable workflows in GitHub settings and provide cross-repository read credentials for downloads; the caller's default token does not automatically grant access to a second private repository. Public repositories need no download credentials. Locally an authenticated `gh` CLI is used as a fallback for private archives.
@@ -196,4 +226,4 @@ Generic chart checks use an isolated npm dependency directory under the consumer
 
 ## Validation
 
-Run `python3 -m unittest discover -s tests -p 'test_*.py'` for configuration contracts and `bash -n scripts/*.sh` for shell syntax. Run `make chart-test`, `make up`, `make helm-test`, `make resilience` and browser acceptance from a consumer checkout using the explicit local override before publishing. The application bootstrap has separate download, cache, tamper and archive-safety tests in the consumer repo.
+Run `python3 -m unittest discover -s tests -p 'test_*.py'` for configuration contracts and `bash -n scripts/*.sh` for shell syntax. Run `make chart-test`, `make up`, `make helm-test`, `make resilience` and browser acceptance from a consumer checkout using the explicit local override before publishing. CLI download, cache, tamper, archive-safety, project discovery and dispatch tests run in this repository.

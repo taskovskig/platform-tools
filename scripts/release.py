@@ -17,4 +17,4 @@ for name in sorted(set(names) - {''}):
     files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
 manifest=root/'distribution.json'
 manifest.write_text(json.dumps({'schemaVersion':1,'files':files},indent=2)+'\n')
-print(json.dumps({'schemaVersion':1,'repository':'taskovskig/platform-tools','tag':(root/'VERSION').read_text().strip(),'manifestSha256':hashlib.sha256(manifest.read_bytes()).hexdigest()},indent=2))
+print(json.dumps({'schemaVersion':1,'repository':'taskovskig/platform-tools','tag':(root/'VERSION').read_text().strip(),'cliApiVersion':1,'manifestSha256':hashlib.sha256(manifest.read_bytes()).hexdigest()},indent=2))

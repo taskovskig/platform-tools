@@ -17,6 +17,11 @@ jobs:
         with:
           node-version: '24'
           cache: npm
+      - name: Install platform CLI
+        run: |
+          python3 -m venv "$RUNNER_TEMP/platform-cli"
+          "$RUNNER_TEMP/platform-cli/bin/python" -m pip install 'git+https://github.com/taskovskig/platform-tools.git@v0.5.0'
+          echo "$RUNNER_TEMP/platform-cli/bin" >> "$GITHUB_PATH"
       - name: Configure environment credentials
         env:
           KUBECONFIG_CONTENT: ${{ secrets.KUBECONFIG }}

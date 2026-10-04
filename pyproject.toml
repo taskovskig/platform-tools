@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "platform-tools-cli"
+dynamic = ["version"]
+description = "Verified platform release bootstrap for application repositories"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+docs = ["reportlab>=4,<5"]
+
+[project.scripts]
+platform-tools = "platform_tools.cli:cli"
+platform-render-design = "platform_tools.render_design:main"
+
+[tool.setuptools]
+packages = ["platform_tools"]
+
+[tool.setuptools.dynamic]
+version = {attr = "platform_tools.__version__"}

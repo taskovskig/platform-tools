@@ -56,10 +56,30 @@ path fields and their old files, and reduce database values to application-speci
 overrides. Verify deployment, persistence and release isolation before committing
 that consumer migration. No consumer migration is needed to publish this release.
 
+## Everyday development
+
+Commit and push source changes normally; run `make test` for local validation.
+You do not need to run `make release-manifest` or commit `distribution.json`
+for ordinary changes. Pull requests and pushes to `main` run the tests without
+requiring an up-to-date manifest. The checked-in manifest may therefore be stale
+between releases.
+
+## Preparing a release
+
+Manifest generation is required only when preparing a new release. Finish all
+source changes, update `VERSION`, then run `make release-manifest` and commit the
+generated manifest together with the release changes. Any further packaged-file
+changes require regenerating it before tagging.
+
+Pushing a `v*` tag runs tests and checks that `VERSION` matches the tag and that
+regenerating the manifest produces no diff. Wait for these checks to pass before
+upgrading consumers. Tags remain immutable; a failed tag check requires a corrected
+commit and a new version/tag, not moving the published tag.
+
 ## First release
 
 1. Review the extraction and run the consumer with `PLATFORM_TOOLS_DIR=../platform-tools make chart-test` and the acceptance commands. Local override is explicit and forbidden in CI.
-2. Set `VERSION` to the release tag (initially `v0.1.0`). Run `python3 scripts/release.py`. Commit all platform source and generated `distribution.json` together.
+2. Set `VERSION` to the release tag (initially `v0.1.0`). Run `make release-manifest`. Commit all platform source and generated `distribution.json` together.
 3. Create and publish an annotated tag on that exact commit:
 
    ```sh

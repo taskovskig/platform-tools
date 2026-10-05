@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Publication has no environment or cluster credentials; do not load common.sh.
+case "${1:-}" in
+  production-release) exec python3 "$(dirname "$0")/production-release.py" publish ;;
+  production-prepare) exec python3 "$(dirname "$0")/production-release.py" prepare ;;
+esac
 source "$(dirname "$0")/common.sh"
 case "${1:-help}" in
   local-tests) bash "$TOOLS_ROOT/scripts/local-tests.sh" ;;

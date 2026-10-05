@@ -130,6 +130,7 @@ def main(argv=None):
     workflow = (ROOT / '.github/workflows/platform.yaml').read_text()
     expected = f"{lock['repository']}/.github/workflows/delivery.yaml@{lock['tag']}"
     if expected not in workflow: raise ValueError('CI workflow tag and platform.lock.json differ')
+    workflow = '\n'.join(p.read_text() for p in (ROOT / '.github/workflows').glob('*.y*ml'))
     references = re.findall(re.escape(lock['repository']) + r'/\.github/workflows/[\w.-]+@([^\s]+)', workflow)
     if any(reference != lock['tag'] for reference in references):
         raise ValueError('All platform workflow references must match platform.lock.json')

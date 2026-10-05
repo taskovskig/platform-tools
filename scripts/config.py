@@ -15,7 +15,7 @@ def path(v):
     return v
 def bind(k, v): print(f'{k}={shlex.quote(str(v))}')
 environment = os.environ.get('PLATFORM_ENVIRONMENT', 'local')
-assert environment in ('local', 'app-ci', 'app-dev'), 'Only local, app-ci and app-dev are supported; production deployment is disabled'
+assert environment in ('local', 'app-ci', 'app-dev', 'app-prod'), 'Unsupported platform environment'
 bind('PLATFORM_ENVIRONMENT', environment)
 bind('IMAGE_PLATFORM', 'linux/amd64')
 if environment != 'local':

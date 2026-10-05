@@ -1,0 +1,96 @@
+name: Production release and deployment
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  publish:
+    name: Publish production release
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      packages: write
+      actions: read
+      pull-requests: read
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      source: ${{ steps.release.outputs.source }}
+      manifest_sha256: ${{ steps.release.outputs.manifest_sha256 }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install platform CLI
+        run: |
+          python3 -m venv "$RUNNER_TEMP/platform-cli"
+          "$RUNNER_TEMP/platform-cli/bin/python" -m pip install 'git+https://github.com/taskovskig/platform-tools.git@v0.7.0'
+          echo "$RUNNER_TEMP/platform-cli/bin" >> "$GITHUB_PATH"
+      - name: Fetch pinned platform
+        run: platform-tools fetch
+      - name: Sign in to GHCR
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
+      - name: Publish production image tags and GitHub Release
+        id: release
+        run: platform-tools production-release
+      - name: Remove registry credentials
+        if: always()
+        run: docker logout ghcr.io || true
+  deploy:
+    name: Deploy approved production release
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: app-prod
+      url: https://github.com/${{ github.repository }}/releases/tag/${{ needs.publish.outputs.tag }}
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PLATFORM_ENVIRONMENT: app-prod
+      DB_NAME: ${{ secrets.DB_NAME }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      PRODUCTION_TAG: ${{ needs.publish.outputs.tag }}
+      PRODUCTION_MANIFEST_SHA256: ${{ needs.publish.outputs.manifest_sha256 }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.publish.outputs.source }}
+          persist-credentials: false
+      - name: Install platform CLI
+        run: |
+          python3 -m venv "$RUNNER_TEMP/platform-cli"
+          "$RUNNER_TEMP/platform-cli/bin/python" -m pip install 'git+https://github.com/taskovskig/platform-tools.git@v0.7.0'
+          echo "$RUNNER_TEMP/platform-cli/bin" >> "$GITHUB_PATH"
+      - name: Configure approved production credentials
+        env:
+          KUBECONFIG_CONTENT: ${{ secrets.KUBECONFIG }}
+        run: |
+          test -n "$KUBECONFIG_CONTENT" || { echo 'Set KUBECONFIG in app-prod.' >&2; exit 1; }
+          umask 077
+          kubeconfig="$RUNNER_TEMP/production-kubeconfig-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          printf '%s' "$KUBECONFIG_CONTENT" > "$kubeconfig"
+          printf 'KUBECONFIG=%s\n' "$kubeconfig" >> "$GITHUB_ENV"
+      - name: Fetch platform and install tools
+        run: |
+          platform-tools fetch
+          platform-tools install-tools
+      - name: Validate approved release snapshot
+        run: platform-tools production-prepare
+      - name: Deploy exact production images and check HTTP contracts
+        run: platform-tools production-deploy
+      - name: Failure diagnostics
+        if: failure() && env.KUBECONFIG != ''
+        run: platform-tools diagnose
+      - name: Remove cluster credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/production-kubeconfig-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"

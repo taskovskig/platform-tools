@@ -178,7 +178,31 @@ promote() {
   db_up
   deploy
   check
+  # Mark only a deployment that completed rollout and HTTP verification.
+  for app in $APPS; do
+    docker tag "$(cat "$STATE/images/$app.id")" "$(app_image "$app"):dev-passed"
+    docker push "$(app_image "$app"):dev-passed"
+  done
 }
+production_deploy() {
+  [ "$PLATFORM_ENVIRONMENT" = app-prod ] && [ "$NAMESPACE" = app-prod ] || { echo 'Production deployment requires app-prod.' >&2; exit 1; }
+  [ "$SERVICE" = all ] || { echo 'Production must deploy every application.' >&2; exit 1; }
+  # Revalidate the release and its age immediately before cluster mutations.
+  python3 "$TOOLS_ROOT/scripts/production-release.py" prepare
+  TAG=$(cat "$STATE/production-tag")
+  [[ "$TAG" =~ ^prod-[0-9]{8}T[0-9]{6}Z$ ]] || { echo 'Invalid production release tag.' >&2; exit 1; }
+  for app in $APPS; do
+    local reference
+    reference=$(cat "$STATE/images/$app")
+    local digest_reference="$(app_image "$app")@${reference##*@}"
+    docker pull "$digest_reference"
+    docker tag "$digest_reference" "$(app_image "$app"):$TAG"
+  done
+  db_up
+  deploy
+  check
+}
+
 deploy() {
   legacy_guard
   [[ "$TAG" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$ ]] || { echo 'Invalid image tag.' >&2; exit 1; }
@@ -253,6 +277,7 @@ case "${1:-help}" in
   ci-up) ci_up ;;
   ci-passed) ci_passed ;;
   promote) promote ;;
+  production-deploy) production_deploy ;;
   deploy)
     [ "$PLATFORM_ENVIRONMENT" = local ] || { echo 'Use ci-up or promote for shared environments.' >&2; exit 1; }
     applications >/dev/null

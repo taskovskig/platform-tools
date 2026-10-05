@@ -99,3 +99,14 @@ class CliTests(unittest.TestCase):
                 b.main(['--project', str(root), 'local-tests'])
             self.assertEqual(execute.call_args.args[1], ['bash', '/verified/platform/scripts/entry.sh', 'local-tests'])
             self.assertEqual(execute.call_args.args[2]['PROJECT_ROOT'], str(root))
+
+class MultiWorkflowPins(unittest.TestCase):
+    def test_production_workflow_must_match_delivery_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            (root/'platform.lock.json').write_text(json.dumps({'schemaVersion':1,'repository':'example/platform','tag':'v0.7.0','manifestSha256':'a'*64}))
+            workflows=root/'.github/workflows';workflows.mkdir(parents=True)
+            (workflows/'platform.yaml').write_text('uses: example/platform/.github/workflows/delivery.yaml@v0.7.0')
+            (workflows/'production.yaml').write_text('uses: example/platform/.github/workflows/production.yaml@v0.6.0')
+            with self.assertRaisesRegex(ValueError,'All platform workflow references'):
+                b.main(['--project',str(root),'fetch'])

@@ -1,6 +1,6 @@
 # Publishing a platform tag
 
-Run these commands from the `platform-tools` repository. The next prepared release is `v0.7.0`; use a new version for each subsequent release. Never move or overwrite a published tag.
+Run these commands from the `platform-tools` repository. The next prepared release is `v0.8.0`; use a new version for each subsequent release. Never move or overwrite a published tag.
 
 ## 1. Prepare the version
 
@@ -13,8 +13,8 @@ git status --short
 
 Align these version references before publishing:
 
-- `VERSION`: the tag, for example `v0.7.0`.
-- `platform_tools/__init__.py`: `__version__`, for example `0.7.0`.
+- `VERSION`: the tag, for example `v0.8.0`.
+- `platform_tools/__init__.py`: `__version__`, for example `0.8.0`.
 - CLI installation tags in `.github/workflows/delivery.yaml` and `.github/workflows/production.yaml`.
 - Installation examples and workflow references in `PLATFORM.md`.
 

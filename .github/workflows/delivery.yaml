@@ -24,7 +24,7 @@ jobs:
       - name: Install platform CLI
         run: |
           python3 -m venv "$RUNNER_TEMP/platform-cli"
-          "$RUNNER_TEMP/platform-cli/bin/python" -m pip install 'git+https://github.com/taskovskig/platform-tools.git@v0.7.0'
+          "$RUNNER_TEMP/platform-cli/bin/python" -m pip install 'git+https://github.com/taskovskig/platform-tools.git@v0.8.0'
           echo "$RUNNER_TEMP/platform-cli/bin" >> "$GITHUB_PATH"
       - name: Configure environment credentials
         env:

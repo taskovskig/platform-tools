@@ -86,6 +86,17 @@ class DeliveryTests(unittest.TestCase):
         path = self.root / 'trace'
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
+    def assert_application_version(self, calls, expected):
+        application = [call for call in calls if call[0] == 'helm' and 'upgrade' in call and 'frontend' in call]
+        self.assertEqual(len(application), 2)  # Server dry-run and real upgrade.
+        chart_paths = {call[call.index('frontend') + 1] for call in application}
+        self.assertEqual(len(chart_paths), 1)
+        chart = Path(chart_paths.pop())
+        self.assertNotEqual(chart, TOOLS / 'helm')
+        self.assertIn('appVersion: ' + json.dumps(expected), (chart / 'Chart.yaml').read_text())
+        self.assertIn(['helm', 'lint', str(chart), '--strict', '-f', 'file'], calls)
+        self.assertIn('appVersion: "1.0.0"', (TOOLS / 'helm/Chart.yaml').read_text())
+
     def test_deploy_publishes_digest_and_never_manages_shared_cluster(self):
         result = self.run_platform('ci-up')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -98,6 +109,7 @@ class DeliveryTests(unittest.TestCase):
             if call[0] in ('kubectl', 'helm') and '--kubeconfig' in call:
                 self.assertIn('kind-testkube-samples', call)
                 self.assertEqual(call[call.index('-n')+1], 'app-ci')
+        self.assert_application_version(calls, 'ci-42')
         upgrades = [call for call in calls if call[0] == 'helm' and 'upgrade' in call]
         application = [call for call in upgrades if 'frontend' in call]
         self.assertTrue(application)
@@ -117,6 +129,7 @@ class DeliveryTests(unittest.TestCase):
                 self.assertIn('kind-disposable', call)
                 self.assertEqual(call[call.index('-n')+1], 'local')
         self.assertTrue(any(argument.startswith('image=sample:') for call in calls for argument in call))
+        self.assert_application_version(calls, (self.root / '.platform/built-tag').read_text().strip())
 
     def test_up_and_down_refuse_existing_cluster_before_any_tool_call(self):
         for command in ['up', 'down']:
@@ -155,6 +168,7 @@ class DeliveryTests(unittest.TestCase):
         self.assertTrue(any(call[:2] == ['docker', 'push'] and call[-1].endswith(':dev-latest') for call in calls))
         self.assertFalse(any('build' in call or 'uninstall' in call or 'delete' in call or call[0]=='kind' for call in calls))
         self.assertTrue(any('image=ghcr.io/example/project/frontend:dev-latest@sha256:'+'a'*64 in call for call in calls))
+        self.assert_application_version(calls, 'ci-42')
         for call in calls:
             if call[0] in ('kubectl', 'helm') and '--kubeconfig' in call:
                 self.assertEqual(call[call.index('-n')+1], 'app-dev')
@@ -184,3 +198,19 @@ class DeliveryTests(unittest.TestCase):
             ['make', 'test'], ['make', 'chart-test'], ['make', 'up'],
             ['make', 'helm-test'], ['make', 'resilience'], ['make', 'browser-ci'],
         ])
+
+    def test_production_deploy_records_timestamp_version_and_keeps_digest(self):
+        self.config['environments']['app-prod'] = dict(self.config['environments']['app-ci'], namespace='app-prod')
+        (self.root / 'platform.json').write_text(json.dumps(self.config))
+        tag = 'prod-20261005T071920Z'
+        images = self.root / '.platform/images'
+        images.mkdir()
+        reference = 'ghcr.io/example/project/frontend:' + tag + '@sha256:' + 'a' * 64
+        (images / 'frontend').write_text(reference)
+        source = (TOOLS / 'scripts/platform.sh').read_text()
+        function = source[source.index('deploy() {', source.index('\ndeploy() {')):source.index('\nFORWARD_PIDS=')]
+        script = 'source "' + str(TOOLS / 'scripts/common.sh') + '"\nlegacy_guard() { :; }\n' + function + '\nTAG=' + tag + '\ndeploy'
+        result = subprocess.run(['bash', '-eu', '-c', script], env=dict(self.env, PLATFORM_ENVIRONMENT='app-prod'), capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_application_version(self.trace(), tag)
+        self.assertTrue(any('image=' + reference in call for call in self.trace()))

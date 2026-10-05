@@ -214,8 +214,19 @@ deploy() {
     else
       kind load docker-image --name "$CLUSTER" "$(app_image "$app"):$TAG"
     fi
-    helm lint "$CHART" --strict -f "$(app_values "$app")"
-    local release_args=(--install "$app" "$CHART" --reset-values -f "$(app_values "$app")"
+    # Helm lists Chart.yaml appVersion, not an application values field.
+    # Stage a private chart per release; never change the verified package.
+    local app_version="$TAG" chart_directory release_chart
+    if [ "$PLATFORM_ENVIRONMENT" = app-dev ]; then
+      app_version=$(docker image inspect "$(app_image "$app"):$TAG" --format '{{index .Config.Labels "io.platform.ci-build"}}')
+      [[ "$app_version" =~ ^ci-[1-9][0-9]*$ ]] || { echo "$app: missing CI build identity for release metadata." >&2; exit 1; }
+    fi
+    mkdir -p "$STATE/charts"
+    chart_directory=$(mktemp -d "$STATE/charts/$app.XXXXXX")
+    release_chart="$chart_directory/chart"
+    python3 "$TOOLS_ROOT/scripts/prepare-chart.py" "$CHART" "$release_chart" "$app_version"
+    helm lint "$release_chart" --strict -f "$(app_values "$app")"
+    local release_args=(--install "$app" "$release_chart" --reset-values -f "$(app_values "$app")"
       --set-string "image=$reference")
     h upgrade "${release_args[@]}" --dry-run=server --hide-secret >/dev/null
     h upgrade "${release_args[@]}" --wait --timeout 10m --history-max 10

@@ -5,7 +5,7 @@
 The `platform-tools-cli` Python package is distributed directly from this repository's immutable release tags. No PyPI publication or application-owned bootstrap source is required. Python 3.10+, Git and pipx are prerequisites.
 
 ```sh
-pipx install 'git+https://github.com/taskovskig/platform-tools.git@v0.7.0'
+pipx install 'git+https://github.com/taskovskig/platform-tools.git@v0.8.0'
 pipx ensurepath
 platform-tools --version
 ```
@@ -21,13 +21,13 @@ For platform development, install this checkout with `pipx install --force .`, t
 Documentation rendering is an optional extra, also owned here:
 
 ```sh
-pipx install --force 'platform-tools-cli[docs] @ git+https://github.com/taskovskig/platform-tools.git@v0.7.0'
+pipx install --force 'platform-tools-cli[docs] @ git+https://github.com/taskovskig/platform-tools.git@v0.8.0'
 platform-render-design PLATFORM-DESIGN.md PLATFORM-DESIGN.pdf
 ```
 
 The existing case-study layout is retained. Input/output paths now come from arguments; installing the base CLI does not install ReportLab. The Markdown and generated PDF remain application-owned.
 
-Before publishing, align `VERSION`, `platform_tools.__version__`, and the CLI installation tag in `delivery.yaml`; run tests and generate the release manifest. Publish v0.7.0 before upgrading application workflow/lock pins. Package installation is validated by the platform checks workflow. Bootstrap tests now live in `tests/test_cli.py` in this repository.
+Before publishing, align `VERSION`, `platform_tools.__version__`, and the CLI installation tag in `delivery.yaml`; run tests and generate the release manifest. Publish v0.8.0 before upgrading application workflow/lock pins. Package installation is validated by the platform checks workflow. Bootstrap tests now live in `tests/test_cli.py` in this repository.
 
 
 Platform-team-owned tooling for local Kubernetes application environments. Consumers pin a Git tag and SHA-256 of `distribution.json`; that manifest pins every file in the package, including the shared Helm chart and reusable workflow. Do not move or overwrite published tags.
@@ -235,9 +235,9 @@ The platform creates a Secret through JSON on stdin, supporting special characte
 
 Generated database values reference POSTGRES_DB in that Secret and set PGDATABASE for probes. Application values can reference the same Secret using env.valueFrom.secretKeyRef, supported by the shared chart schema. Set API DB_NAME/DB_USER/DB_PASSWORD to the matching POSTGRES_DB/POSTGRES_USER/POSTGRES_PASSWORD keys. app-prod is deployed by the separate approved production job.
 
-## Production release workflow (v0.7.0)
+## Production release workflow (v0.8.0)
 
-Consumers add a workflow_dispatch caller for `.github/workflows/production.yaml@v0.7.0`, restricted to main, using the SAME workflow-level `shared-delivery-${{ github.repository }}` concurrency group as delivery and `cancel-in-progress: false`. Grant contents/packages write and actions/pull-requests read; inherit secrets. The reusable workflow has two jobs: publish (no environment) and deploy (app-prod environment, contents read only). Environment protection rules govern deployment approval. Publication cannot use cluster secrets because no environment is selected.
+Consumers add a workflow_dispatch caller for `.github/workflows/production.yaml@v0.8.0`, restricted to main, using the SAME workflow-level `shared-delivery-${{ github.repository }}` concurrency group as delivery and `cancel-in-progress: false`. Grant contents/packages write and actions/pull-requests read; inherit secrets. The reusable workflow has two jobs: publish (no environment) and deploy (app-prod environment, contents read only). Environment protection rules govern deployment approval. Publication cannot use cluster secrets because no environment is selected.
 
 Configure app-prod in platform.json with namespace app-prod, context/cluster, and the SAME imagePrefix as app-dev. Set productionRelease.initialBaseline to a full source commit for the first release's notes. Later notes use the previous published production release asset. The implementation requires a successful main delivery and matching dev-latest/dev-passed image IDs, source-tree labels and CI build IDs. Delivery now marks dev-passed only after development HTTP checks succeed.
 
@@ -246,3 +246,20 @@ Publication creates a retryable draft release.json snapshot before changing regi
 The shared concurrency lock remains held during approval, so development and CI wait. GitHub may replace pending runs; serialize operator activity and approve/cancel promptly. Partial publication can leave a draft/tags; retry the same run. Once its snapshot exists it never selects new images. Published retries do not move aliases. A newer production record blocks an older retry. No automatic multi-release rollback or credential rotation is provided.
 
 Commands production-release and production-prepare bypass common cluster configuration; production-deploy requires app-prod and revalidates the snapshot before mutations. These are workflow entry points, not general developer commands. Do not invoke publication while bypassing workflow concurrency. See the consumer PRODUCTION.md for the operator guide.
+
+## Application versions in Helm release history (v0.8.0)
+
+Each application deployment uses a private chart copy under the consumer's
+ignored `.platform/charts/` directory. Its `Chart.yaml` appVersion records the
+application version; the checksum-verified shared chart and its version remain
+unchanged. The same copy is used for linting, server dry-run, and deployment.
+
+`helm ls` and `helm history` show `ci-<run number>` for app-ci and app-dev.
+Development obtains this identity from the promoted image's validated
+`io.platform.ci-build` label, even though its image reference uses dev-latest.
+Production shows `prod-YYYYMMDDTHHMMSSZ`; local deployments show their generated
+image tag. Image digests remain pinned in shared environments, and PostgreSQL
+keeps its upstream chart's appVersion. Existing revisions retain their old
+metadata until another deployment; rollback restores the selected revision's
+application version and image together. A CI run number can be reused on a rerun,
+so inspect the image digest when an exact image identity is needed.
